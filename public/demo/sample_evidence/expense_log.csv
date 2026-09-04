@@ -1,0 +1,29 @@
+date,paid_by,category,description,amount,split
+2024-03-04,Alex,groceries,Weekly shop - Whole Foods,87.43,50/50
+2024-03-10,Alex,utilities,March electricity bill,198.76,50/50
+2024-03-11,Alex,groceries,Mid-week top-up,34.20,50/50
+2024-03-18,Alex,groceries,Weekly shop - Trader Joe's,91.15,50/50
+2024-03-25,Alex,groceries,Weekly shop - Whole Foods,78.60,50/50
+2024-04-01,Alex,utilities,April electricity bill,204.33,50/50
+2024-04-03,Sam,groceries,Weekly shop - Trader Joe's,112.40,50/50
+2024-04-08,Alex,groceries,Weekly shop - Whole Foods,83.75,50/50
+2024-04-15,Alex,groceries,Weekly shop - Whole Foods,95.20,50/50
+2024-04-22,Alex,groceries,Weekly shop - Safeway,79.45,50/50
+2024-05-06,Alex,utilities,May electricity bill,211.55,50/50
+2024-05-07,Alex,groceries,Weekly shop - Whole Foods,88.30,50/50
+2024-05-13,Alex,groceries,Weekly shop - Trader Joe's,72.90,50/50
+2024-05-20,Alex,groceries,Weekly shop - Whole Foods,94.15,50/50
+2024-05-27,Sam,groceries,Weekly shop - Safeway,140.00,50/50
+2024-06-03,Alex,utilities,June electricity bill,218.40,50/50
+2024-06-04,Alex,groceries,Weekly shop - Whole Foods,86.70,50/50
+2024-06-10,Alex,groceries,Weekly shop - Trader Joe's,77.55,50/50
+2024-06-17,Alex,groceries,Weekly shop - Whole Foods,92.80,50/50
+2024-06-24,Alex,groceries,Weekly shop - Safeway,81.20,50/50
+
+SUMMARY
+Total paid by Alex: $2,476.22
+Total paid by Sam:  $252.40
+Difference (Alex over Sam): $1,223.82
+Alex's grocery payments: 16 out of 18 weeks tracked
+Sam's grocery payments: 2 out of 18 weeks tracked
+Average monthly electricity: $208.26 (city average for comparable 2BR: ~$145)
