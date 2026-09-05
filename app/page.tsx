@@ -120,59 +120,57 @@ export default function HomePage() {
   }
 
   return (
-    <main className="min-h-screen flex flex-col items-center justify-center px-4 py-16">
+    <main className="h-screen overflow-hidden flex flex-col items-center justify-center px-4 py-4 bg-[#10121a]">
       {/* Hero */}
-      <div className="mb-10 text-center">
-        <div className="inline-flex items-center gap-2 mb-3 px-3 py-1 rounded-full bg-indigo-950 border border-indigo-800 text-indigo-300 text-xs font-medium tracking-wide">
-          ⚖️ AI MEDIATOR
-        </div>
-        <h1 className="text-4xl font-bold text-white mb-3">
+      <div className="mb-4 text-center max-w-lg">
+        
+        <h1 className="font-serif text-[1.9rem] leading-tight text-[#f1f2f6] mb-2">
           Argument Mediator
         </h1>
-        <p className="text-[#7b8096] max-w-md text-sm leading-relaxed">
+        <p className="text-[#8b90a3] text-[13px] leading-relaxed">
           Transcribes both sides live, extracts factual claims, matches them against
           evidence, and produces a verdict report — without declaring a winner.
         </p>
       </div>
 
       {/* Session form */}
-      <div className="w-full max-w-md bg-[#1a1d27] rounded-2xl border border-[#2a2d3a] p-8 shadow-xl">
-        <h2 className="text-white font-semibold mb-6">New Session</h2>
+      <div className="w-full max-w-md bg-[#161925] border border-[#262a3a] p-6 shadow-[0_20px_60px_-15px_rgba(0,0,0,0.5)]">
+        <h2 className="text-[#f1f2f6] font-serif text-lg mb-4">New session</h2>
 
-        <div className="flex gap-3 mb-6">
+        <div className="flex gap-3 mb-4">
           <div className="flex-1">
-            <label className="text-xs text-[#7b8096] mb-1 block">Speaker 1</label>
+            <label className="text-xs text-[#8b90a3] mb-1.5 block">Speaker 1</label>
             <input
               value={speakerA}
               onChange={(e) => setSpeakerA(e.target.value)}
-              className="w-full bg-[#0f1117] border border-[#2a2d3a] rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-indigo-500"
+              className="w-full bg-[#0e1017] border border-[#262a3a] px-3 py-2 text-[#f1f2f6] text-sm focus:outline-none focus:border-[#c4a76d] focus:ring-1 focus:ring-[#c4a76d] transition-colors"
               placeholder="Alex"
             />
           </div>
           <div className="flex-1">
-            <label className="text-xs text-[#7b8096] mb-1 block">Speaker 2</label>
+            <label className="text-xs text-[#8b90a3] mb-1.5 block">Speaker 2</label>
             <input
               value={speakerB}
               onChange={(e) => setSpeakerB(e.target.value)}
-              className="w-full bg-[#0f1117] border border-[#2a2d3a] rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-indigo-500"
+              className="w-full bg-[#0e1017] border border-[#262a3a] px-3 py-2 text-[#f1f2f6] text-sm focus:outline-none focus:border-[#c4a76d] focus:ring-1 focus:ring-[#c4a76d] transition-colors"
               placeholder="Sam"
             />
           </div>
         </div>
 
         {/* Evidence upload */}
-        <div className="mb-6">
-          <label className="text-xs text-[#7b8096] mb-1 block">
-            Evidence files <span className="text-[#4a4d5a]">(optional · txt, md, csv, pdf)</span>
+        <div className="mb-4">
+          <label className="text-xs text-[#8b90a3] mb-1.5 block">
+            Evidence files <span className="text-[#565b70]">(optional · txt, md, csv, pdf)</span>
           </label>
           <div
-            className="border border-dashed border-[#2a2d3a] rounded-lg p-4 text-center cursor-pointer hover:border-indigo-600 transition-colors"
+            className="border border-dashed border-[#262a3a] p-3 text-center cursor-pointer hover:border-[#c4a76d] transition-colors"
             onClick={() => fileRef.current?.click()}
           >
             {evidenceFiles.length === 0 ? (
-              <p className="text-[#7b8096] text-xs">Click or drag files here</p>
+              <p className="text-[#8b90a3] text-xs">Click or drag files here</p>
             ) : (
-              <ul className="text-xs text-indigo-300 space-y-1">
+              <ul className="text-xs text-[#c4a76d] space-y-1">
                 {evidenceFiles.map((f) => (
                   <li key={f.name}>📎 {f.name}</li>
                 ))}
@@ -193,22 +191,22 @@ export default function HomePage() {
 
         <button
           onClick={handleStart}
-          className="w-full bg-indigo-600 hover:bg-indigo-500 active:bg-indigo-700 text-white font-semibold py-3 rounded-xl transition-colors"
+          className="w-full bg-[#c4a76d] hover:bg-[#d3b87e] active:bg-[#b3985e] text-[#161925] font-semibold py-2.5 transition-colors"
         >
           Start live session →
         </button>
       </div>
 
       {/* Demo button */}
-      <div className="mt-6 w-full max-w-md">
-        <div className="relative flex items-center mb-4">
-          <div className="flex-1 border-t border-[#2a2d3a]" />
-          <span className="px-3 text-xs text-[#4a4d5a]">or try the demo</span>
-          <div className="flex-1 border-t border-[#2a2d3a]" />
+      <div className="mt-4 w-full max-w-md">
+        <div className="relative flex items-center mb-3">
+          <div className="flex-1 border-t border-[#262a3a]" />
+          <span className="px-3 text-xs text-[#565b70]">or try the demo</span>
+          <div className="flex-1 border-t border-[#262a3a]" />
         </div>
 
         {demoState === 'error' && (
-          <div className="mb-3 px-4 py-3 bg-red-950 border border-red-800 rounded-xl text-red-300 text-xs">
+          <div className="mb-3 px-4 py-2.5 bg-[#241419] border border-[#4a2530] text-[#e39aa8] text-xs">
             ⚠️ {demoError}
           </div>
         )}
@@ -216,7 +214,7 @@ export default function HomePage() {
         <button
           onClick={handleDemo}
           disabled={demoState === 'running'}
-          className="w-full border border-indigo-700 text-indigo-300 hover:bg-indigo-950 disabled:opacity-50 font-medium py-3 rounded-xl transition-colors text-sm"
+          className="w-full border border-[#3a3f54] text-[#c4a76d] hover:bg-[#1a1d29] disabled:opacity-50 font-medium py-2.5 transition-colors text-sm"
         >
           {demoState === 'running' ? (
             <span className="flex items-center justify-center gap-2">
@@ -226,7 +224,7 @@ export default function HomePage() {
             '▶ Run scripted demo (no microphone needed)'
           )}
         </button>
-        <p className="mt-2 text-center text-xs text-[#4a4d5a]">
+        <p className="mt-2 text-center text-xs text-[#565b70]">
           Streams a pre-recorded argument through the full pipeline
         </p>
       </div>
