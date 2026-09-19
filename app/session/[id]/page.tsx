@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, useCallback } from 'react'
 import { useParams, useSearchParams } from 'next/navigation'
 import { connect, MediatorSocket } from '@/lib/websocket'
 import { MicCapture } from '@/lib/micCapture'
-import { playDemo } from '@/lib/demoPlayer'
+import { runScriptedDemo } from '@/lib/demo'
 import LiveTranscript from '@/components/LiveTranscript'
 import ClaimBoard from '@/components/ClaimBoard'
 import EvidenceUpload from '@/components/EvidenceUpload'
@@ -60,7 +60,6 @@ export default function SessionPage() {
   const [muted, setMuted] = useState(false)
   const [micError, setMicError] = useState<string | null>(null)
   const [wsStatus, setWsStatus] = useState<'connecting' | 'open' | 'closed'>('connecting')
-  const [demoProgress, setDemoProgress] = useState<{ played: number; total: number } | null>(null)
 
   // Refs (avoid stale closure issues)
   const sockRef = useRef<MediatorSocket | null>(null)
@@ -152,17 +151,9 @@ export default function SessionPage() {
         sock.send({ type: 'start_session', speakers: speakerNames })
 
         if (isDemo) {
-          // Demo mode: stream audio automatically
-          playDemo({
-            socket: sock,
-            onProgress: (played, total) => setDemoProgress({ played, total }),
-            onDone: () => {
-              setTimeout(() => {
-                sock.send({ type: 'end_session' })
-              }, 1000) // brief pause before ending
-            },
-          }).catch((err) => {
-            console.error('[Demo] playDemo failed:', err)
+          // Demo mode: stream audio automatically then send end_session
+          runScriptedDemo(sock).catch((err: Error) => {
+            console.error('[Demo] runScriptedDemo failed:', err)
             setMicError(`Demo failed: ${err.message}`)
           })
         } else {
@@ -303,13 +294,6 @@ export default function SessionPage() {
             >
               {muted ? '🔇 Muted' : '🎙 Live'}
             </button>
-          )}
-
-          {/* Demo progress */}
-          {isDemo && demoProgress && (
-            <div className="text-xs text-[#7b8096]">
-              {Math.round((demoProgress.played / demoProgress.total) * 100)}% streamed
-            </div>
           )}
 
           {/* End session */}

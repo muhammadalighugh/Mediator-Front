@@ -34,7 +34,8 @@ export default function EvidenceUpload({ sessionId }: EvidenceUploadProps) {
       const data = await res.json()
       // Use the browser File.name (always a clean basename) rather than the
       // server-echoed filename, which may carry path separators or extra extensions.
-      const cleanName = file.name
+      // Collapse a doubled evidence extension such as ".csv.txt" → ".txt" (display only).
+      const cleanName = file.name.replace(/\.(?:txt|md|csv|pdf)(\.(?:txt|md|csv|pdf))$/i, '$1')
       setSources((prev) => [
         ...prev,
         { filename: cleanName, chunks: data.chunks_ingested },

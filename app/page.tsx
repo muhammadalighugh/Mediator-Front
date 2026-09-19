@@ -3,7 +3,6 @@
 import { useState, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { connect } from '@/lib/websocket'
-import { playDemo } from '@/lib/demoPlayer'
 
 const DEMO_SPEAKERS = ['Alex', 'Sam']
 const DEMO_EVIDENCE_FILES = [
@@ -218,7 +217,7 @@ export default function HomePage() {
         >
           {demoState === 'running' ? (
             <span className="flex items-center justify-center gap-2">
-              <span className="animate-pulse">●</span> Starting demo…
+              <span className="animate-pulse">●</span> Demo running…
             </span>
           ) : (
             '▶ Run scripted demo (no microphone needed)'
