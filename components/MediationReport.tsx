@@ -1,6 +1,6 @@
 'use client'
 
-import type { MediationReport as Report, Claim, EvidenceLink, ContradictionFlag, VerdictType } from '@/lib/types'
+import type { MediationReport as Report, Claim, EvidenceLink, ContradictionFlag, SpeakerAssessment, VerdictType } from '@/lib/types'
 
 interface MediationReportProps {
   report: Report
@@ -35,6 +35,48 @@ export default function MediationReportView({ report, speakerMap }: MediationRep
   const verdictMap = new Map<string, EvidenceLink>(report.verdicts.map((v) => [v.claim_id, v]))
   const disputeClass = DISPUTE_TYPE_STYLES[report.dispute_type] ?? DISPUTE_TYPE_STYLES.MIXED
 
+  // Separate OPINION and unmatched EVIDENCE_REF claims from the verdict table.
+  // OPINION is never evaluated — it's a value judgment, not a checkable assertion.
+  // EVIDENCE_REF claims that were evaluated (have a verdict link) stay in the table.
+  // EVIDENCE_REF claims with no link (e.g. corpus had no matching passage) are
+  // shown in the "Evidence references" section — never as INSUFFICIENT EVIDENCE.
+  const verdictClaims = report.claims.filter(
+    (c) => !(c.statement_type === 'opinion') &&
+           !(c.statement_type === 'evidence_ref' && !verdictMap.has(c.id))
+  )
+  const evidenceRefClaims = report.claims.filter(
+    (c) => c.statement_type === 'evidence_ref' && !verdictMap.has(c.id)
+  )
+  const opinionClaims = report.claims.filter((c) => c.statement_type === 'opinion')
+  const skippedClaims = [...evidenceRefClaims, ...opinionClaims]
+
+  // ---------------------------------------------------------------------------
+  // Assessment panel helpers
+  // ---------------------------------------------------------------------------
+
+  // Deterministic favorability line: one speaker needs ≥2 more
+  // (supported − contradicted) than the other to be declared favored.
+  function getFavorabilityLine(
+    assessments: SpeakerAssessment[],
+    speakerMap: Map<string, { display_name: string; color: string }>,
+  ): string {
+    if (assessments.length < 2) return "The evidence does not clearly favor either party."
+    const [a, b] = assessments
+    const scoreA = a.supported - a.contradicted
+    const scoreB = b.supported - b.contradicted
+    const nameA = speakerMap.get(a.speaker_id)?.display_name ?? a.speaker_id
+    const nameB = speakerMap.get(b.speaker_id)?.display_name ?? b.speaker_id
+    if (scoreA - scoreB >= 2) {
+      return `The evidence favors ${nameA} — ${a.supported} of ${a.checkable_total} checkable claim${a.checkable_total !== 1 ? 's' : ''} supported.`
+    }
+    if (scoreB - scoreA >= 2) {
+      return `The evidence favors ${nameB} — ${b.supported} of ${b.checkable_total} checkable claim${b.checkable_total !== 1 ? 's' : ''} supported.`
+    }
+    return "The evidence does not clearly favor either party."
+  }
+
+  const favorabilityLine = getFavorabilityLine(report.assessments ?? [], speakerMap)
+
   return (
     <div className="max-w-5xl mx-auto px-4 py-10">
       {/* Header */}
@@ -56,7 +98,56 @@ export default function MediationReportView({ report, speakerMap }: MediationRep
         <p className="text-sm text-[#c0c4d6] leading-relaxed">{report.summary}</p>
       </section>
 
-      {/* Verdicts table */}
+      {/* Assessment panel — deterministic tally, first thing reader sees */}
+      {(report.assessments ?? []).length > 0 && (
+        <section className="mb-8 p-5 bg-[#1a1d27] rounded-2xl border border-[#2a2d3a]">
+          <h2 className="text-sm font-semibold text-[#7b8096] uppercase tracking-wider mb-4">
+            Assessment
+          </h2>
+          <div className="space-y-3 mb-4">
+            {(report.assessments ?? []).map((a) => {
+              const spk = speakerMap.get(a.speaker_id)
+              const chipColor = spk?.color ?? '#7b8096'
+              return (
+                <div key={a.speaker_id} className="flex items-center gap-3 flex-wrap">
+                  {/* Speaker chip */}
+                  <span
+                    className="inline-block px-2.5 py-1 rounded-full text-xs font-semibold w-28 text-center flex-shrink-0"
+                    style={{
+                      backgroundColor: chipColor + '22',
+                      color: chipColor,
+                      border: `1px solid ${chipColor}44`,
+                    }}
+                  >
+                    {spk?.display_name ?? a.speaker_id}
+                  </span>
+                  {/* Tally pills */}
+                  <span className="text-sm font-semibold text-green-400">
+                    {a.supported}
+                    <span className="text-xs font-normal text-[#7b8096] ml-1">supported</span>
+                  </span>
+                  <span className="text-[#3a3f52]">·</span>
+                  <span className="text-sm font-semibold text-red-400">
+                    {a.contradicted}
+                    <span className="text-xs font-normal text-[#7b8096] ml-1">contradicted</span>
+                  </span>
+                  <span className="text-[#3a3f52]">·</span>
+                  <span className="text-sm font-semibold text-[#7b8096]">
+                    {a.uncertain}
+                    <span className="text-xs font-normal text-[#7b8096] ml-1">unverified</span>
+                  </span>
+                </div>
+              )
+            })}
+          </div>
+          {/* Deterministic favorability line — computed from tallies, not LLM */}
+          <p className="text-xs text-[#7b8096] border-t border-[#2a2d3a] pt-3 italic">
+            {favorabilityLine}
+          </p>
+        </section>
+      )}
+
+      {/* Verdicts table — only evaluated claims */}
       <section className="mb-8">
         <h2 className="text-sm font-semibold text-[#7b8096] uppercase tracking-wider mb-3">
           Claim Verdicts
@@ -73,7 +164,7 @@ export default function MediationReportView({ report, speakerMap }: MediationRep
               </tr>
             </thead>
             <tbody>
-              {report.claims.map((claim, i) => {
+              {verdictClaims.map((claim, i) => {
                 const link = verdictMap.get(claim.id)
                 const spk = claim.speaker_id ? speakerMap.get(claim.speaker_id) : null
                 const chipColor = spk?.color ?? '#7b8096'
@@ -123,10 +214,60 @@ export default function MediationReportView({ report, speakerMap }: MediationRep
                   </tr>
                 )
               })}
+              {verdictClaims.length === 0 && (
+                <tr className="bg-[#0f1117]">
+                  <td colSpan={5} className="px-4 py-6 text-center text-xs text-[#4a4d5a]">
+                    No checkable claims were extracted from this session.
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>
       </section>
+
+      {/* Evidence references — claims that point to evidence but weren't matched, plus opinions */}
+      {skippedClaims.length > 0 && (
+        <section className="mb-8">
+          <h2 className="text-sm font-semibold text-[#7b8096] uppercase tracking-wider mb-3">
+            Evidence References &amp; Opinions
+          </h2>
+          <div className="rounded-2xl border border-[#2a2d3a] overflow-hidden">
+            {skippedClaims.map((claim, i) => {
+              const spk = claim.speaker_id ? speakerMap.get(claim.speaker_id) : null
+              const chipColor = spk?.color ?? '#7b8096'
+              const rowBg = i % 2 === 0 ? 'bg-[#0f1117]' : 'bg-[#1a1d27]'
+              const isEvidenceRef = claim.statement_type === 'evidence_ref'
+              return (
+                <div
+                  key={claim.id}
+                  className={`${rowBg} px-4 py-3 flex items-start gap-3 border-b border-[#2a2d3a] last:border-0`}
+                >
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[#e8eaf0] text-xs leading-snug">{claim.verbatim_quote}</p>
+                    <p className="text-[10px] text-[#4a4d5a] mt-0.5 capitalize">
+                      {claim.statement_type.replace('_', ' ')}
+                      {isEvidenceRef && ' — no matching passage found in uploaded evidence'}
+                    </p>
+                  </div>
+                  {spk && (
+                    <span
+                      className="flex-shrink-0 inline-block px-2 py-0.5 rounded-full text-xs font-semibold"
+                      style={{
+                        backgroundColor: chipColor + '22',
+                        color: chipColor,
+                        border: `1px solid ${chipColor}44`,
+                      }}
+                    >
+                      {spk.display_name}
+                    </span>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        </section>
+      )}
 
       {/* Contradictions */}
       {report.contradictions.length > 0 && (

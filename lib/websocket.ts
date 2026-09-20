@@ -2,51 +2,53 @@
  * lib/websocket.ts
  * ----------------
  * Typed WebSocket wrapper with:
- *   - connect(sessionId) → ws://localhost:8000/ws/session/{id}
+ *   - connect(sessionId) → ws://127.0.0.1:8000/ws/session/{id}
  *   - Fully typed message unions (both directions)
  *   - Handler registry (on/off pattern)
- *   - Auto-reconnect with exponential back-off (paused while tab is hidden)
+ *   - Persistent retry: fixed 2 s interval, max 15 attempts before "failed"
+ *   - Status events: "connecting" | "connected" | "reconnecting" | "failed"
+ *   - Audio chunks sent while disconnected are dropped silently
  */
 
 import type { ClientMessage, ServerMessage } from './types'
 
-const BACKEND_WS =
-  typeof window !== 'undefined'
-    ? (process.env.NEXT_PUBLIC_BACKEND_WS ?? 'ws://localhost:8000')
-    : 'ws://localhost:8000'
+// Overridable via NEXT_PUBLIC_WS_URL env var; IPv4 explicit to avoid Chrome
+// resolving "localhost" → ::1 (IPv6) while uvicorn only binds 127.0.0.1.
+const WS_BASE =
+  (typeof process !== 'undefined' && process.env.NEXT_PUBLIC_WS_URL) ||
+  'ws://127.0.0.1:8000'
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 
-type MessageHandler = (msg: ServerMessage) => void
+export type WsStatus = 'connecting' | 'connected' | 'reconnecting' | 'failed'
 
-interface ReconnectOptions {
-  /** Maximum reconnect attempts before giving up (default: 5) */
-  maxAttempts?: number
-  /** Base delay in ms for exponential back-off (default: 500) */
-  baseDelay?: number
-}
+type MessageHandler = (msg: ServerMessage) => void
+type StatusHandler  = (status: WsStatus) => void
 
 // ---------------------------------------------------------------------------
 // MediatorSocket
 // ---------------------------------------------------------------------------
 
+const RETRY_INTERVAL_MS = 2000
+const MAX_ATTEMPTS      = 15
+
 export class MediatorSocket {
   private ws: WebSocket | null = null
-  private handlers: Set<MessageHandler> = new Set()
+  private msgHandlers: Set<MessageHandler> = new Set()
+  private statusHandlers: Set<StatusHandler> = new Set()
   private sessionId: string
-  private closed = false          // permanently closed by caller
+  /** Permanently closed by caller — no more reconnects. */
+  private closed = false
+  /** Whether the session ended gracefully (no reconnect desired). */
+  private sessionEnded = false
   private attempt = 0
-  private reconnectTimer: ReturnType<typeof setTimeout> | null = null
-  private opts: Required<ReconnectOptions>
+  private retryTimer: ReturnType<typeof setTimeout> | null = null
+  private _status: WsStatus = 'connecting'
 
-  constructor(sessionId: string, opts: ReconnectOptions = {}) {
+  constructor(sessionId: string) {
     this.sessionId = sessionId
-    this.opts = {
-      maxAttempts: opts.maxAttempts ?? 5,
-      baseDelay: opts.baseDelay ?? 500,
-    }
   }
 
   // --------------------------------------------------------------------------
@@ -56,41 +58,66 @@ export class MediatorSocket {
   /** Open the WebSocket connection. */
   connect(): void {
     if (this.closed) return
+    this._setStatus('connecting')
     this._open()
   }
 
-  /** Send a typed client message. */
+  /** Send a typed client message. Drops silently if not connected. */
   send(msg: ClientMessage): void {
     if (this.ws?.readyState === WebSocket.OPEN) {
       this.ws.send(JSON.stringify(msg))
     }
+    // Audio chunks and other messages dropped while disconnected — intentional.
   }
 
   /** Register a handler for all server messages. Returns an unsubscribe fn. */
   on(handler: MessageHandler): () => void {
-    this.handlers.add(handler)
-    return () => this.handlers.delete(handler)
+    this.msgHandlers.add(handler)
+    return () => this.msgHandlers.delete(handler)
   }
 
-  /** Permanently close — no more reconnects. */
-  disconnect(): void {
-    this.closed = true
-    if (this.reconnectTimer) clearTimeout(this.reconnectTimer)
-    this.ws?.close()
-    this.ws = null
+  /** Register a handler for connection-status changes. Returns an unsubscribe fn. */
+  onStatus(handler: StatusHandler): () => void {
+    this.statusHandlers.add(handler)
+    // Immediately deliver the current status so the caller doesn't miss it.
+    handler(this._status)
+    return () => this.statusHandlers.delete(handler)
+  }
+
+  get status(): WsStatus {
+    return this._status
   }
 
   get readyState(): number {
     return this.ws?.readyState ?? WebSocket.CLOSED
   }
 
+  /** Permanently close — no more reconnects. */
+  disconnect(): void {
+    this.closed = true
+    if (this.retryTimer) clearTimeout(this.retryTimer)
+    this.ws?.close()
+    this.ws = null
+  }
+
   // --------------------------------------------------------------------------
   // Internal
   // --------------------------------------------------------------------------
 
+  private _setStatus(s: WsStatus): void {
+    if (this._status === s) return
+    this._status = s
+    this.statusHandlers.forEach((h) => h(s))
+  }
+
   private _open(): void {
-    const url = `${BACKEND_WS}/ws/session/${this.sessionId}`
+    const url = `${WS_BASE}/ws/session/${this.sessionId}`
     this.ws = new WebSocket(url)
+
+    this.ws.onopen = () => {
+      this.attempt = 0
+      this._setStatus('connected')
+    }
 
     this.ws.onmessage = (ev) => {
       let msg: ServerMessage
@@ -100,34 +127,34 @@ export class MediatorSocket {
         console.error('[WS] failed to parse message', ev.data)
         return
       }
-      this.handlers.forEach((h) => h(msg))
-    }
-
-    this.ws.onopen = () => {
-      this.attempt = 0  // reset on successful connect
+      // Track graceful session end so we don't retry after it
+      if (msg.type === 'session_ended') this.sessionEnded = true
+      this.msgHandlers.forEach((h) => h(msg))
     }
 
     this.ws.onclose = () => {
-      if (this.closed) return
-      this._scheduleReconnect()
+      if (this.closed || this.sessionEnded) return
+      this._scheduleRetry()
     }
 
-    this.ws.onerror = (ev) => {
-      console.error('[WS] error', ev)
+    this.ws.onerror = () => {
+      // onerror always fires before onclose; let onclose drive retry logic.
+      // Nothing to do here except avoid an unhandled event log.
     }
   }
 
-  private _scheduleReconnect(): void {
+  private _scheduleRetry(): void {
     if (this.closed) return
-    if (this.attempt >= this.opts.maxAttempts) {
-      console.warn('[WS] max reconnect attempts reached')
+    if (this.attempt >= MAX_ATTEMPTS) {
+      console.warn('[WS] max reconnect attempts reached — giving up')
+      this._setStatus('failed')
       return
     }
-    const delay = this.opts.baseDelay * Math.pow(2, this.attempt)
     this.attempt++
-    this.reconnectTimer = setTimeout(() => {
+    this._setStatus('reconnecting')
+    this.retryTimer = setTimeout(() => {
       if (!this.closed) this._open()
-    }, delay)
+    }, RETRY_INTERVAL_MS)
   }
 }
 
@@ -135,11 +162,8 @@ export class MediatorSocket {
 // Factory helper
 // ---------------------------------------------------------------------------
 
-export function connect(
-  sessionId: string,
-  opts?: ReconnectOptions,
-): MediatorSocket {
-  const sock = new MediatorSocket(sessionId, opts)
+export function connect(sessionId: string): MediatorSocket {
+  const sock = new MediatorSocket(sessionId)
   sock.connect()
   return sock
 }

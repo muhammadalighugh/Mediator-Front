@@ -78,6 +78,14 @@ export interface ContradictionFlag {
   resolved: boolean
 }
 
+export interface SpeakerAssessment {
+  speaker_id: string
+  supported: number
+  contradicted: number
+  uncertain: number         // UNCERTAIN + INSUFFICIENT_EVIDENCE
+  checkable_total: number   // supported + contradicted
+}
+
 export interface MediationReport {
   session_id: string
   claims: Claim[]
@@ -86,6 +94,7 @@ export interface MediationReport {
   agreements: string[]
   dispute_type: string
   summary: string
+  assessments: SpeakerAssessment[]
 }
 
 // ---------------------------------------------------------------------------
@@ -94,13 +103,29 @@ export interface MediationReport {
 
 /** Messages the CLIENT sends to the server */
 export type ClientMessage =
+  | { type: 'begin_enrollment'; slot: number }   // start voice enrollment for slot N
   | { type: 'start_session'; speakers: string[] }
-  | { type: 'audio_chunk'; data: string }   // base64-encoded Int16 PCM
+  | { type: 'audio_chunk'; data: string }        // base64-encoded Int16 PCM
   | { type: 'analyze' }
   | { type: 'end_session' }
 
+/** Enrollment result from the server — four possible shapes:
+ *  success:    name is a non-null string, no duplicate_of / give_up
+ *  no-name:    name is null (ASR/LLM got nothing), neither flag set → retry
+ *  duplicate:  name is null, duplicate_of is the already-enrolled name
+ *  give_up:    name is null, give_up is true → show typed fallback
+ */
+export interface EnrollmentResultMessage {
+  type: 'enrollment_result'
+  slot: number
+  name: string | null
+  duplicate_of?: string   // present only on duplicate rejection
+  give_up?: boolean       // present only when max duplicates exceeded
+}
+
 /** Messages the SERVER sends to the client */
 export type ServerMessage =
+  | EnrollmentResultMessage
   | { type: 'transcript_partial'; speaker_id: string | null; text: string; start_ms: number; end_ms: number }
   | { type: 'transcript_final';   speaker_id: string | null; text: string; start_ms: number; end_ms: number; utterance_id: string }
   | { type: 'claims_updated';     claims: Claim[] }

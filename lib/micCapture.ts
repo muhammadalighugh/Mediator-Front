@@ -31,6 +31,7 @@ export class MicCapture {
   private muted = false
   private socket: MediatorSocket
   private onError: (err: string) => void
+  private firstChunkSent = false
 
   constructor(opts: MicCaptureOptions) {
     this.socket = opts.socket
@@ -74,9 +75,16 @@ export class MicCapture {
     // Receive PCM Int16 buffers from the worklet, base64-encode, send
     this.worklet.port.onmessage = (ev: MessageEvent<ArrayBuffer>) => {
       if (this.muted) return
-      const b64 = btoa(
-        String.fromCharCode(...new Uint8Array(ev.data))
-      )
+      const bytes = new Uint8Array(ev.data)
+      let binary = ''
+      for (let i = 0; i < bytes.length; i += 8192) {
+        binary += String.fromCharCode(...Array.from(bytes.subarray(i, i + 8192)))
+      }
+      const b64 = btoa(binary)
+      if (!this.firstChunkSent) {
+        this.firstChunkSent = true
+        console.log('[test] first audio chunk sent')
+      }
       this.socket.send({ type: 'audio_chunk', data: b64 })
     }
 

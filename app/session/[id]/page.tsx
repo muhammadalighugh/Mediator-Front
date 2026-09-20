@@ -34,11 +34,12 @@ export default function SessionPage() {
   const sessionId = params.id as string
   const isDemo = searchParams.get('demo') === '1'
 
-  // Parse speaker list from URL
+  // Parse speaker list from URL — these are the canonical declared names.
+  // Fall back to "Unknown" (never to generic "Speaker A/B") when absent.
   const speakersParam = searchParams.get('speakers')
   const speakerNames: string[] = speakersParam
     ? JSON.parse(decodeURIComponent(speakersParam))
-    : ['Speaker A', 'Speaker B']
+    : ['Unknown', 'Unknown']
 
   const SPEAKER_COLORS = ['#6366f1', '#f59e0b', '#10b981', '#ef4444']
   const speakers: Speaker[] = speakerNames.map((name, i) => ({
@@ -46,7 +47,14 @@ export default function SessionPage() {
     display_name: name,
     color: SPEAKER_COLORS[i % SPEAKER_COLORS.length],
   }))
-  const speakerMap = new Map(speakers.map((s) => [s.id, s]))
+
+  // speakerMap includes the synthetic "speaker_unknown" entry so that
+  // utterances the backend couldn't attribute render as "Unknown" rather
+  // than blank in the live transcript and claim board.
+  const speakerMap = new Map<string, Speaker>([
+    ...speakers.map((s): [string, Speaker] => [s.id, s]),
+    ['speaker_unknown', { id: 'speaker_unknown', display_name: 'Unknown', color: '#7b8096' }],
+  ])
 
   // ------------------------------------------------------------------
   // State
@@ -138,15 +146,13 @@ export default function SessionPage() {
   // Connect WS + start mic / demo on mount
   // ------------------------------------------------------------------
   useEffect(() => {
-    const sock = connect(sessionId, { maxAttempts: 5 })
+    const sock = connect(sessionId)
     sockRef.current = sock
 
     const unsubscribe = sock.on(handleMessage)
 
-    // Poll for WS open
-    const poll = setInterval(() => {
-      if (sock.readyState === WebSocket.OPEN) {
-        clearInterval(poll)
+    const unsubStatus = sock.onStatus((s) => {
+      if (s === 'connected') {
         setWsStatus('open')
         sock.send({ type: 'start_session', speakers: speakerNames })
 
@@ -168,14 +174,13 @@ export default function SessionPage() {
           })
         }
       }
-      if (sock.readyState === WebSocket.CLOSED) {
-        clearInterval(poll)
+      if (s === 'failed') {
         setWsStatus('closed')
       }
-    }, 100)
+    })
 
     return () => {
-      clearInterval(poll)
+      unsubStatus()
       unsubscribe()
       micRef.current?.stop()
       if (pollTimerRef.current) clearTimeout(pollTimerRef.current)

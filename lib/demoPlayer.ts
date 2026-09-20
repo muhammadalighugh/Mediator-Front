@@ -52,7 +52,13 @@ function resampleLinear(input: Float32Array, fromRate: number, toRate: number): 
 }
 
 function arrayBufferToBase64(buf: ArrayBuffer): string {
-  return btoa(String.fromCharCode(...new Uint8Array(buf)))
+  const bytes = new Uint8Array(buf)
+  let binary = ''
+  const CHUNK = 8192
+  for (let i = 0; i < bytes.length; i += CHUNK) {
+    binary += String.fromCharCode(...Array.from(bytes.subarray(i, i + CHUNK)))
+  }
+  return btoa(binary)
 }
 
 export interface DemoPlayerOptions {
@@ -79,7 +85,9 @@ export async function playDemo(opts: DemoPlayerOptions): Promise<void> {
   }
 
   // 3. Assert sample rate; offline linear-interpolation fallback if needed
-  let samples = audioBuffer.getChannelData(0)   // mono
+  // getChannelData returns Float32Array<ArrayBufferLike>; copy into a plain
+  // Float32Array<ArrayBuffer> so downstream functions type-check correctly.
+  let samples: Float32Array = new Float32Array(audioBuffer.getChannelData(0))
   if (audioBuffer.sampleRate !== TARGET_RATE) {
     console.warn(
       `[DemoPlayer] decodeAudioData returned ${audioBuffer.sampleRate} Hz — ` +
