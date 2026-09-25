@@ -47,8 +47,13 @@ export class MediatorSocket {
   private retryTimer: ReturnType<typeof setTimeout> | null = null
   private _status: WsStatus = 'connecting'
 
-  constructor(sessionId: string) {
+  private userEmail: string
+  private token: string
+
+  constructor(sessionId: string, userEmail = '', token = '') {
     this.sessionId = sessionId
+    this.userEmail = userEmail
+    this.token = token
   }
 
   // --------------------------------------------------------------------------
@@ -111,7 +116,11 @@ export class MediatorSocket {
   }
 
   private _open(): void {
-    const url = `${WS_BASE}/ws/session/${this.sessionId}`
+    const params = new URLSearchParams()
+    if (this.token) params.set('token', this.token)
+    if (this.userEmail) params.set('user_email', this.userEmail)
+    const qs = params.toString() ? `?${params.toString()}` : ''
+    const url = `${WS_BASE}/ws/session/${this.sessionId}${qs}`
     this.ws = new WebSocket(url)
 
     this.ws.onopen = () => {
@@ -162,8 +171,8 @@ export class MediatorSocket {
 // Factory helper
 // ---------------------------------------------------------------------------
 
-export function connect(sessionId: string): MediatorSocket {
-  const sock = new MediatorSocket(sessionId)
+export function connect(sessionId: string, userEmail = '', token = ''): MediatorSocket {
+  const sock = new MediatorSocket(sessionId, userEmail, token)
   sock.connect()
   return sock
 }

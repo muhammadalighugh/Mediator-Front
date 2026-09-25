@@ -85,7 +85,7 @@ export interface UseWsEnrollmentReturn {
 // Hook
 // ---------------------------------------------------------------------------
 
-export function useWsEnrollment(sessionId: string): UseWsEnrollmentReturn {
+export function useWsEnrollment(sessionId: string, userEmail = '', token = ''): UseWsEnrollmentReturn {
   const sockRef = useRef<MediatorSocket | null>(null)
   const micRef  = useRef<MicCapture | null>(null)
   const unsubMsgRef    = useRef<(() => void) | null>(null)
@@ -184,7 +184,7 @@ export function useWsEnrollment(sessionId: string): UseWsEnrollmentReturn {
   useEffect(() => {
     if (sockRef.current) return   // already created (StrictMode double-invoke)
 
-    const sock = connect(sessionId)
+    const sock = connect(sessionId, userEmail, token)
     sockRef.current = sock
     setSockState(sock)   // trigger re-render so callers get the real socket
 

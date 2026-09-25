@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useRef, useCallback } from 'react'
+import { Paperclip, CheckCircle } from 'lucide-react'
 
 interface UploadedSource {
   filename: string
@@ -32,30 +33,22 @@ export default function EvidenceUpload({ sessionId }: EvidenceUploadProps) {
         return
       }
       const data = await res.json()
-      // Use the browser File.name (always a clean basename) rather than the
-      // server-echoed filename, which may carry path separators or extra extensions.
-      // Collapse a doubled evidence extension such as ".csv.txt" → ".txt" (display only).
       const cleanName = file.name.replace(/\.(?:txt|md|csv|pdf)(\.(?:txt|md|csv|pdf))$/i, '$1')
-      setSources((prev) => [
-        ...prev,
-        { filename: cleanName, chunks: data.chunks_ingested },
-      ])
+      setSources((prev) => [...prev, { filename: cleanName, chunks: data.chunks_ingested }])
     } finally {
       setUploading(false)
     }
   }, [sessionId])
 
   const handleFiles = useCallback(
-    (files: FileList | null) => {
-      if (!files) return
-      Array.from(files).forEach(uploadFile)
-    },
+    (files: FileList | null) => { if (files) Array.from(files).forEach(uploadFile) },
     [uploadFile]
   )
 
   return (
     <div>
-      <h3 className="text-xs font-semibold text-[#7b8096] uppercase tracking-wider mb-2">
+      {/* Header */}
+      <h3 className="text-xs font-semibold text-[#003017] uppercase tracking-wider mb-2">
         Evidence
       </h3>
 
@@ -63,23 +56,19 @@ export default function EvidenceUpload({ sessionId }: EvidenceUploadProps) {
       <div
         onDragOver={(e) => { e.preventDefault(); setDragging(true) }}
         onDragLeave={() => setDragging(false)}
-        onDrop={(e) => {
-          e.preventDefault()
-          setDragging(false)
-          handleFiles(e.dataTransfer.files)
-        }}
+        onDrop={(e) => { e.preventDefault(); setDragging(false); handleFiles(e.dataTransfer.files) }}
         onClick={() => fileRef.current?.click()}
-        className={`border border-dashed rounded-lg p-3 text-center cursor-pointer transition-colors text-xs ${
+        className={`flex items-center gap-2 border border-dashed rounded-sm px-3 py-2.5 cursor-pointer transition-colors text-xs ${
           dragging
-            ? 'border-indigo-500 bg-indigo-950'
-            : 'border-[#2a2d3a] hover:border-indigo-700'
+            ? 'border-[#003017] bg-[#003017]/8 text-[#003017]'
+            : 'border-[#003017]/30 hover:border-[#003017] hover:bg-[#003017]/5 text-[#5A6A75]'
         }`}
       >
-        {uploading ? (
-          <span className="text-[#7b8096] animate-pulse">Uploading…</span>
-        ) : (
-          <span className="text-[#4a4d5a]">Drop files or click · txt md csv pdf</span>
-        )}
+        <Paperclip size={13} strokeWidth={2} className="flex-shrink-0 text-[#003017]/60" />
+        {uploading
+          ? <span className="text-[#003017] animate-pulse">Uploading…</span>
+          : <span>Drop files or click · <span className="text-[#003017]/50">txt  md  csv  pdf</span></span>
+        }
       </div>
 
       <input
@@ -91,14 +80,14 @@ export default function EvidenceUpload({ sessionId }: EvidenceUploadProps) {
         onChange={(e) => handleFiles(e.target.files)}
       />
 
-      {/* Source list */}
+      {/* Uploaded files */}
       {sources.length > 0 && (
         <ul className="mt-2 space-y-1">
           {sources.map((s, i) => (
-            <li key={i} className="flex items-center gap-2 text-xs text-green-400">
-              <span>✓</span>
-              <span className="truncate">{s.filename}</span>
-              <span className="text-[#4a4d5a] flex-shrink-0">({s.chunks} chunks)</span>
+            <li key={i} className="flex items-center gap-1.5 text-xs">
+              <CheckCircle size={11} strokeWidth={2} className="text-[#003017] flex-shrink-0" />
+              <span className="truncate text-[#22303C] font-medium">{s.filename}</span>
+              <span className="text-[#C2CDD6] flex-shrink-0">{s.chunks} chunks</span>
             </li>
           ))}
         </ul>

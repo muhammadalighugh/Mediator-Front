@@ -1,222 +1,246 @@
 'use client'
 
+import { useState } from 'react'
 import type { MediationReport as Report, Claim, EvidenceLink, ContradictionFlag, SpeakerAssessment, VerdictType } from '@/lib/types'
+
+const API_BASE =
+  (typeof process !== 'undefined' && process.env.NEXT_PUBLIC_API_URL) ||
+  'http://localhost:8000'
 
 interface MediationReportProps {
   report: Report
   speakerMap: Map<string, { display_name: string; color: string }>
+  /** When provided, shows the Download PDF button */
+  sessionId?: string
 }
 
 const VERDICT_STYLES: Record<VerdictType, { label: string; bg: string; text: string; border: string }> = {
-  supported:              { label: 'SUPPORTED',             bg: 'bg-green-950',  text: 'text-green-400',  border: 'border-green-800' },
-  contradicted:           { label: 'CONTRADICTED',          bg: 'bg-red-950',    text: 'text-red-400',    border: 'border-red-800'   },
-  uncertain:              { label: 'UNCERTAIN',             bg: 'bg-amber-950',  text: 'text-amber-400',  border: 'border-amber-800' },
-  insufficient_evidence:  { label: 'INSUFFICIENT EVIDENCE', bg: 'bg-[#1a1d27]',  text: 'text-[#7b8096]',  border: 'border-[#2a2d3a]' },
-}
-
-const DISPUTE_TYPE_STYLES: Record<string, string> = {
-  FACTUAL:          'bg-blue-950 text-blue-400 border-blue-800',
-  PRIORITIES:       'bg-purple-950 text-purple-400 border-purple-800',
-  MISUNDERSTANDING: 'bg-amber-950 text-amber-400 border-amber-800',
-  MIXED:            'bg-[#1a1d27] text-[#7b8096] border-[#2a2d3a]',
+  supported:             { label: 'SUPPORTED',             bg: 'bg-[#edfaf3]', text: 'text-[#1a9e5a]',  border: 'border-[#b6f0d0]' },
+  contradicted:          { label: 'CONTRADICTED',          bg: 'bg-[#FFF4E8]', text: 'text-[#c76b0a]',  border: 'border-[#F4A259]/50' },
+  uncertain:             { label: 'UNCERTAIN',             bg: 'bg-[#FFF8F0]', text: 'text-[#F4A259]',  border: 'border-[#F4A259]/40' },
+  insufficient_evidence: { label: 'NO EVIDENCE',           bg: 'bg-[#F7F9FB]', text: 'text-[#9EAAB8]',  border: 'border-[#E2E8ED]'   },
 }
 
 function VerdictBadge({ verdict }: { verdict: VerdictType }) {
   const s = VERDICT_STYLES[verdict]
   return (
-    <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-bold border ${s.bg} ${s.text} ${s.border}`}>
+    <span className={`inline-block px-2 py-0.5 rounded-sm text-[9px] font-bold border tracking-wide ${s.bg} ${s.text} ${s.border}`}>
       {s.label}
     </span>
   )
 }
 
-export default function MediationReportView({ report, speakerMap }: MediationReportProps) {
+// Speaker name tag — same style as transcript/claim board badges
+function SpeakerTag({ name, dark = false }: { name: string; dark?: boolean }) {
+  return (
+    <span className={`inline-flex items-center px-1.5 py-px rounded-sm text-[8px] font-semibold border ${
+      dark
+        ? 'bg-white text-[#003017] border-[#003017]'
+        : 'bg-[#003017] text-white border-[#002d16]'
+    }`}>
+      {name}
+    </span>
+  )
+}
+
+// Section wrapper — same sharp border / bg as claim columns
+function Section({ title, children, count }: { title: string; children: React.ReactNode; count?: number }) {
+  return (
+    <section className="mb-6">
+      <div className="flex items-center justify-between mb-2">
+        <h2 className="text-[10px] font-semibold text-[#003017] uppercase tracking-wider">{title}</h2>
+        {count !== undefined && <span className="text-xs text-[#C2CDD6]">{count}</span>}
+      </div>
+      {children}
+    </section>
+  )
+}
+
+function getFavorabilityLine(
+  assessments: SpeakerAssessment[],
+  speakerMap: Map<string, { display_name: string; color: string }>,
+): string {
+  if (assessments.length < 2) return 'The evidence does not clearly favor either party.'
+  const [a, b] = assessments
+  const scoreA = a.supported - a.contradicted
+  const scoreB = b.supported - b.contradicted
+  const nameA = speakerMap.get(a.speaker_id)?.display_name ?? a.speaker_id
+  const nameB = speakerMap.get(b.speaker_id)?.display_name ?? b.speaker_id
+  if (scoreA - scoreB >= 2)
+    return `The evidence favors ${nameA} — ${a.supported} of ${a.checkable_total} checkable claim${a.checkable_total !== 1 ? 's' : ''} supported.`
+  if (scoreB - scoreA >= 2)
+    return `The evidence favors ${nameB} — ${b.supported} of ${b.checkable_total} checkable claim${b.checkable_total !== 1 ? 's' : ''} supported.`
+  return 'The evidence does not clearly favor either party.'
+}
+
+export default function MediationReportView({ report, speakerMap, sessionId }: MediationReportProps) {
+  const [pdfState, setPdfState] = useState<'idle' | 'generating'>('idle')
+
+  async function handleDownloadPdf() {
+    if (pdfState === 'generating') return
+    setPdfState('generating')
+    try {
+      const res = await fetch(`${API_BASE}/report/${sessionId}/pdf`)
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `mediation-report-${sessionId}.pdf`
+      a.click()
+      URL.revokeObjectURL(url)
+    } catch (err) {
+      console.error('PDF download failed:', err)
+    } finally {
+      setPdfState('idle')
+    }
+  }
+
   const claimMap = new Map<string, Claim>(report.claims.map((c) => [c.id, c]))
   const verdictMap = new Map<string, EvidenceLink>(report.verdicts.map((v) => [v.claim_id, v]))
-  const disputeClass = DISPUTE_TYPE_STYLES[report.dispute_type] ?? DISPUTE_TYPE_STYLES.MIXED
 
-  // Separate OPINION and unmatched EVIDENCE_REF claims from the verdict table.
-  // OPINION is never evaluated — it's a value judgment, not a checkable assertion.
-  // EVIDENCE_REF claims that were evaluated (have a verdict link) stay in the table.
-  // EVIDENCE_REF claims with no link (e.g. corpus had no matching passage) are
-  // shown in the "Evidence references" section — never as INSUFFICIENT EVIDENCE.
   const verdictClaims = report.claims.filter(
-    (c) => !(c.statement_type === 'opinion') &&
-           !(c.statement_type === 'evidence_ref' && !verdictMap.has(c.id))
+    (c) =>
+      !(c.statement_type === 'opinion') &&
+      !(c.statement_type === 'evidence_ref' && !verdictMap.has(c.id)),
   )
-  const evidenceRefClaims = report.claims.filter(
-    (c) => c.statement_type === 'evidence_ref' && !verdictMap.has(c.id)
-  )
-  const opinionClaims = report.claims.filter((c) => c.statement_type === 'opinion')
-  const skippedClaims = [...evidenceRefClaims, ...opinionClaims]
-
-  // ---------------------------------------------------------------------------
-  // Assessment panel helpers
-  // ---------------------------------------------------------------------------
-
-  // Deterministic favorability line: one speaker needs ≥2 more
-  // (supported − contradicted) than the other to be declared favored.
-  function getFavorabilityLine(
-    assessments: SpeakerAssessment[],
-    speakerMap: Map<string, { display_name: string; color: string }>,
-  ): string {
-    if (assessments.length < 2) return "The evidence does not clearly favor either party."
-    const [a, b] = assessments
-    const scoreA = a.supported - a.contradicted
-    const scoreB = b.supported - b.contradicted
-    const nameA = speakerMap.get(a.speaker_id)?.display_name ?? a.speaker_id
-    const nameB = speakerMap.get(b.speaker_id)?.display_name ?? b.speaker_id
-    if (scoreA - scoreB >= 2) {
-      return `The evidence favors ${nameA} — ${a.supported} of ${a.checkable_total} checkable claim${a.checkable_total !== 1 ? 's' : ''} supported.`
-    }
-    if (scoreB - scoreA >= 2) {
-      return `The evidence favors ${nameB} — ${b.supported} of ${b.checkable_total} checkable claim${b.checkable_total !== 1 ? 's' : ''} supported.`
-    }
-    return "The evidence does not clearly favor either party."
-  }
+  const skippedClaims = [
+    ...report.claims.filter((c) => c.statement_type === 'evidence_ref' && !verdictMap.has(c.id)),
+    ...report.claims.filter((c) => c.statement_type === 'opinion'),
+  ]
 
   const favorabilityLine = getFavorabilityLine(report.assessments ?? [], speakerMap)
 
   return (
-    <div className="max-w-5xl mx-auto px-4 py-10">
-      {/* Header */}
+    <div className="max-w-5xl mx-auto px-6 py-8 text-[#22303C]">
+
+      {/* ── Header ── */}
       <div className="flex items-start justify-between mb-8 flex-wrap gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-white mb-1">Mediation Report</h1>
-          <p className="text-xs text-[#7b8096]">Session {report.session_id}</p>
+          <h1 className="text-lg font-bold text-[#003017] mb-0.5">Mediation Report</h1>
+          <p className="text-[10px] text-[#9EAAB8] font-mono">session · {report.session_id}</p>
         </div>
-        <span className={`inline-block px-3 py-1 rounded-full text-xs font-semibold border ${disputeClass}`}>
-          {report.dispute_type} DISPUTE
-        </span>
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="inline-block px-2.5 py-1 rounded-sm text-[10px] font-semibold border bg-[#003017] text-white border-[#002d16] uppercase tracking-wide">
+            {report.dispute_type}
+          </span>
+          {sessionId && (
+            <button
+              onClick={handleDownloadPdf}
+              disabled={pdfState === 'generating'}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-semibold border border-[#003017] text-[#003017] hover:bg-[#003017] hover:text-white disabled:opacity-50 transition-colors rounded-sm"
+            >
+              {pdfState === 'generating' ? 'Generating…' : '↓ Download PDF'}
+            </button>
+          )}
+        </div>
       </div>
 
-      {/* Executive summary */}
-      <section className="mb-8 p-5 bg-[#1a1d27] rounded-2xl border border-[#2a2d3a]">
-        <h2 className="text-sm font-semibold text-[#7b8096] uppercase tracking-wider mb-3">
-          Executive Summary
-        </h2>
-        <p className="text-sm text-[#c0c4d6] leading-relaxed">{report.summary}</p>
-      </section>
+      {/* ── Executive summary ── */}
+      <Section title="Executive Summary">
+        <div className="rounded-sm border border-[#E2E8ED] bg-white px-4 py-3">
+          <p className="text-sm text-[#22303C] leading-relaxed">{report.summary}</p>
+        </div>
+      </Section>
 
-      {/* Assessment panel — deterministic tally, first thing reader sees */}
+      {/* ── Assessment ── */}
       {(report.assessments ?? []).length > 0 && (
-        <section className="mb-8 p-5 bg-[#1a1d27] rounded-2xl border border-[#2a2d3a]">
-          <h2 className="text-sm font-semibold text-[#7b8096] uppercase tracking-wider mb-4">
-            Assessment
-          </h2>
-          <div className="space-y-3 mb-4">
+        <Section title="Assessment">
+          <div className="rounded-sm border border-[#E2E8ED] bg-white px-4 py-3 space-y-3">
             {(report.assessments ?? []).map((a) => {
               const spk = speakerMap.get(a.speaker_id)
-              const chipColor = spk?.color ?? '#7b8096'
+              const total = a.checkable_total || 1
+              const supportedPct = Math.round((a.supported / total) * 100)
+              const contradictedPct = Math.round((a.contradicted / total) * 100)
               return (
-                <div key={a.speaker_id} className="flex items-center gap-3 flex-wrap">
-                  {/* Speaker chip */}
-                  <span
-                    className="inline-block px-2.5 py-1 rounded-full text-xs font-semibold w-28 text-center flex-shrink-0"
-                    style={{
-                      backgroundColor: chipColor + '22',
-                      color: chipColor,
-                      border: `1px solid ${chipColor}44`,
-                    }}
-                  >
-                    {spk?.display_name ?? a.speaker_id}
-                  </span>
-                  {/* Tally pills */}
-                  <span className="text-sm font-semibold text-green-400">
-                    {a.supported}
-                    <span className="text-xs font-normal text-[#7b8096] ml-1">supported</span>
-                  </span>
-                  <span className="text-[#3a3f52]">·</span>
-                  <span className="text-sm font-semibold text-red-400">
-                    {a.contradicted}
-                    <span className="text-xs font-normal text-[#7b8096] ml-1">contradicted</span>
-                  </span>
-                  <span className="text-[#3a3f52]">·</span>
-                  <span className="text-sm font-semibold text-[#7b8096]">
-                    {a.uncertain}
-                    <span className="text-xs font-normal text-[#7b8096] ml-1">unverified</span>
-                  </span>
+                <div key={a.speaker_id}>
+                  <div className="flex items-center gap-3 mb-1.5 flex-wrap">
+                    <SpeakerTag name={spk?.display_name ?? a.speaker_id} />
+                    <span className="text-[11px] font-semibold text-[#1a9e5a]">
+                      {a.supported}
+                      <span className="text-[10px] font-normal text-[#9EAAB8] ml-1">supported</span>
+                    </span>
+                    <span className="text-[#E2E8ED]">·</span>
+                    <span className="text-[11px] font-semibold text-[#c76b0a]">
+                      {a.contradicted}
+                      <span className="text-[10px] font-normal text-[#9EAAB8] ml-1">contradicted</span>
+                    </span>
+                    <span className="text-[#E2E8ED]">·</span>
+                    <span className="text-[11px] font-semibold text-[#9EAAB8]">
+                      {a.uncertain}
+                      <span className="text-[10px] font-normal text-[#9EAAB8] ml-1">unverified</span>
+                    </span>
+                  </div>
+                  {/* mini stacked bar */}
+                  <div className="flex h-1.5 rounded-full overflow-hidden bg-[#E2E8ED] max-w-xs">
+                    <div className="bg-[#1a9e5a]" style={{ width: `${supportedPct}%` }} />
+                    <div className="bg-[#F4A259]" style={{ width: `${contradictedPct}%` }} />
+                  </div>
                 </div>
               )
             })}
+            <p className="text-[10px] text-[#9EAAB8] border-t border-[#E2E8ED] pt-2 italic">
+              {favorabilityLine}
+            </p>
           </div>
-          {/* Deterministic favorability line — computed from tallies, not LLM */}
-          <p className="text-xs text-[#7b8096] border-t border-[#2a2d3a] pt-3 italic">
-            {favorabilityLine}
-          </p>
-        </section>
+        </Section>
       )}
 
-      {/* Verdicts table — only evaluated claims */}
-      <section className="mb-8">
-        <h2 className="text-sm font-semibold text-[#7b8096] uppercase tracking-wider mb-3">
-          Claim Verdicts
-        </h2>
-        <div className="overflow-x-auto rounded-2xl border border-[#2a2d3a]">
-          <table className="w-full text-sm">
+      {/* ── Claim Verdicts ── */}
+      <Section title="Claim Verdicts" count={verdictClaims.length}>
+        <div className="rounded-sm border border-[#E2E8ED] overflow-hidden">
+          <table className="w-full text-xs">
             <thead>
-              <tr className="border-b border-[#2a2d3a] text-xs text-[#7b8096] uppercase tracking-wider">
-                <th className="text-left px-4 py-3 font-medium">Claim</th>
-                <th className="text-left px-4 py-3 font-medium">Speaker</th>
-                <th className="text-left px-4 py-3 font-medium">Verdict</th>
-                <th className="text-left px-4 py-3 font-medium">Evidence quote</th>
-                <th className="text-left px-4 py-3 font-medium">Reasoning</th>
+              <tr className="border-b border-[#E2E8ED] bg-[#003017] text-white">
+                <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-wide">Claim</th>
+                <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-wide">Speaker</th>
+                <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-wide">Verdict</th>
+                <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-wide">Evidence quote</th>
+                <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-wide">Reasoning</th>
               </tr>
             </thead>
             <tbody>
               {verdictClaims.map((claim, i) => {
                 const link = verdictMap.get(claim.id)
                 const spk = claim.speaker_id ? speakerMap.get(claim.speaker_id) : null
-                const chipColor = spk?.color ?? '#7b8096'
                 const verdict = link?.verdict ?? 'insufficient_evidence'
-                const rowBg = i % 2 === 0 ? 'bg-[#0f1117]' : 'bg-[#1a1d27]'
+                const rowBg = i % 2 === 0 ? 'bg-white' : 'bg-[#F7F9FB]'
                 return (
-                  <tr key={claim.id} className={`${rowBg} border-b border-[#2a2d3a] last:border-0`}>
-                    <td className="px-4 py-3 max-w-xs">
-                      <p className="text-[#e8eaf0] text-xs leading-snug">{claim.verbatim_quote}</p>
-                      <p className="text-[10px] text-[#4a4d5a] mt-0.5 capitalize">
+                  <tr key={claim.id} className={`${rowBg} border-b border-[#E2E8ED] last:border-0`}>
+                    <td className="px-3 py-2.5 max-w-[200px]">
+                      <p className="text-[#22303C] text-xs leading-snug">{claim.verbatim_quote}</p>
+                      <p className="text-[9px] text-[#C2CDD6] mt-0.5 capitalize">
                         {claim.statement_type.replace('_', ' ')}
                       </p>
                     </td>
-                    <td className="px-4 py-3 whitespace-nowrap">
+                    <td className="px-3 py-2.5 whitespace-nowrap">
                       {spk ? (
-                        <span
-                          className="inline-block px-2 py-0.5 rounded-full text-xs font-semibold"
-                          style={{
-                            backgroundColor: chipColor + '22',
-                            color: chipColor,
-                            border: `1px solid ${chipColor}44`,
-                          }}
-                        >
-                          {spk.display_name}
-                        </span>
+                        <SpeakerTag name={spk.display_name} />
                       ) : (
-                        <span className="text-[#4a4d5a] text-xs">—</span>
+                        <span className="text-[#C2CDD6]">—</span>
                       )}
                     </td>
-                    <td className="px-4 py-3 whitespace-nowrap">
+                    <td className="px-3 py-2.5 whitespace-nowrap">
                       <VerdictBadge verdict={verdict} />
                     </td>
-                    <td className="px-4 py-3 max-w-xs">
+                    <td className="px-3 py-2.5 max-w-[200px]">
                       {link?.quote ? (
-                        <div>
-                          <blockquote className="text-xs text-[#c0c4d6] italic border-l-2 border-indigo-700 pl-2 leading-snug">
-                            "{link.quote}"
-                          </blockquote>
-                        </div>
+                        <blockquote className="text-[11px] text-[#5A6A75] italic border-l-2 border-[#003017]/30 pl-2 leading-snug">
+                          &ldquo;{link.quote}&rdquo;
+                        </blockquote>
                       ) : (
-                        <span className="text-xs text-[#4a4d5a]">—</span>
+                        <span className="text-[#C2CDD6]">—</span>
                       )}
                     </td>
-                    <td className="px-4 py-3 max-w-xs">
-                      <p className="text-xs text-[#7b8096] leading-snug">{link?.reasoning ?? '—'}</p>
+                    <td className="px-3 py-2.5 max-w-[200px]">
+                      <p className="text-[11px] text-[#5A6A75] leading-snug">{link?.reasoning ?? '—'}</p>
                     </td>
                   </tr>
                 )
               })}
               {verdictClaims.length === 0 && (
-                <tr className="bg-[#0f1117]">
-                  <td colSpan={5} className="px-4 py-6 text-center text-xs text-[#4a4d5a]">
+                <tr className="bg-white">
+                  <td colSpan={5} className="px-4 py-6 text-center text-xs text-[#C2CDD6]">
                     No checkable claims were extracted from this session.
                   </td>
                 </tr>
@@ -224,57 +248,39 @@ export default function MediationReportView({ report, speakerMap }: MediationRep
             </tbody>
           </table>
         </div>
-      </section>
+      </Section>
 
-      {/* Evidence references — claims that point to evidence but weren't matched, plus opinions */}
+      {/* ── Evidence references & opinions ── */}
       {skippedClaims.length > 0 && (
-        <section className="mb-8">
-          <h2 className="text-sm font-semibold text-[#7b8096] uppercase tracking-wider mb-3">
-            Evidence References &amp; Opinions
-          </h2>
-          <div className="rounded-2xl border border-[#2a2d3a] overflow-hidden">
+        <Section title="Evidence References & Opinions" count={skippedClaims.length}>
+          <div className="rounded-sm border border-[#E2E8ED] overflow-hidden">
             {skippedClaims.map((claim, i) => {
               const spk = claim.speaker_id ? speakerMap.get(claim.speaker_id) : null
-              const chipColor = spk?.color ?? '#7b8096'
-              const rowBg = i % 2 === 0 ? 'bg-[#0f1117]' : 'bg-[#1a1d27]'
+              const rowBg = i % 2 === 0 ? 'bg-white' : 'bg-[#F7F9FB]'
               const isEvidenceRef = claim.statement_type === 'evidence_ref'
               return (
                 <div
                   key={claim.id}
-                  className={`${rowBg} px-4 py-3 flex items-start gap-3 border-b border-[#2a2d3a] last:border-0`}
+                  className={`${rowBg} px-3 py-2.5 flex items-start gap-3 border-b border-[#E2E8ED] last:border-0`}
                 >
                   <div className="flex-1 min-w-0">
-                    <p className="text-[#e8eaf0] text-xs leading-snug">{claim.verbatim_quote}</p>
-                    <p className="text-[10px] text-[#4a4d5a] mt-0.5 capitalize">
+                    <p className="text-xs text-[#22303C] leading-snug">{claim.verbatim_quote}</p>
+                    <p className="text-[9px] text-[#C2CDD6] mt-0.5 capitalize">
                       {claim.statement_type.replace('_', ' ')}
                       {isEvidenceRef && ' — no matching passage found in uploaded evidence'}
                     </p>
                   </div>
-                  {spk && (
-                    <span
-                      className="flex-shrink-0 inline-block px-2 py-0.5 rounded-full text-xs font-semibold"
-                      style={{
-                        backgroundColor: chipColor + '22',
-                        color: chipColor,
-                        border: `1px solid ${chipColor}44`,
-                      }}
-                    >
-                      {spk.display_name}
-                    </span>
-                  )}
+                  {spk && <SpeakerTag name={spk.display_name} />}
                 </div>
               )
             })}
           </div>
-        </section>
+        </Section>
       )}
 
-      {/* Contradictions */}
+      {/* ── Contradictions ── */}
       {report.contradictions.length > 0 && (
-        <section className="mb-8">
-          <h2 className="text-sm font-semibold text-[#7b8096] uppercase tracking-wider mb-3">
-            Contradictions ({report.contradictions.length})
-          </h2>
+        <Section title="Contradictions" count={report.contradictions.length}>
           <div className="space-y-3">
             {report.contradictions.map((flag, i) => {
               const ca = claimMap.get(flag.claim_id_a)
@@ -284,24 +290,30 @@ export default function MediationReportView({ report, speakerMap }: MediationRep
               return (
                 <div
                   key={i}
-                  className="p-4 bg-red-950 border border-red-900 rounded-xl"
+                  className="rounded-sm border border-[#F4A259]/50 bg-[#FFF4E8]"
                 >
-                  <p className="text-xs font-semibold text-red-400 mb-3 uppercase tracking-wide">
-                    ⚡ {flag.description}
-                  </p>
-                  <div className="grid grid-cols-2 gap-4">
+                  {/* banner */}
+                  <div className="px-3 py-2 border-b border-[#F4A259]/30 flex items-center gap-2">
+                    <span className="w-1.5 h-1.5 rounded-full bg-[#F4A259] flex-shrink-0" />
+                    <p className="text-[10px] font-semibold text-[#c76b0a] uppercase tracking-wide">
+                      {flag.description}
+                    </p>
+                    {!flag.resolved && (
+                      <span className="ml-auto text-[8px] font-bold border border-[#F4A259]/60 text-[#c76b0a] px-1.5 py-px rounded-sm">
+                        UNRESOLVED
+                      </span>
+                    )}
+                  </div>
+                  <div className="grid grid-cols-2 gap-3 p-3">
                     {[{ claim: ca, spk: spkA }, { claim: cb, spk: spkB }].map(({ claim, spk }, j) => (
-                      <div key={j} className="bg-[#1a1d27] rounded-lg p-3">
+                      <div key={j} className="bg-white rounded-sm border border-[#E2E8ED] px-3 pt-4 pb-2.5 relative">
                         {spk && (
-                          <p
-                            className="text-[10px] font-semibold mb-1"
-                            style={{ color: spk.color }}
-                          >
-                            {spk.display_name}
-                          </p>
+                          <span className="absolute -top-2 left-2">
+                            <SpeakerTag name={spk.display_name} />
+                          </span>
                         )}
-                        <p className="text-xs text-[#c0c4d6] italic">
-                          "{claim?.verbatim_quote ?? '—'}"
+                        <p className="text-xs text-[#5A6A75] italic leading-snug">
+                          &ldquo;{claim?.verbatim_quote ?? '—'}&rdquo;
                         </p>
                       </div>
                     ))}
@@ -310,29 +322,26 @@ export default function MediationReportView({ report, speakerMap }: MediationRep
               )
             })}
           </div>
-        </section>
+        </Section>
       )}
 
-      {/* Common ground */}
+      {/* ── Common Ground ── */}
       {report.agreements.length > 0 && (
-        <section className="mb-8">
-          <h2 className="text-sm font-semibold text-[#7b8096] uppercase tracking-wider mb-3">
-            Common Ground
-          </h2>
-          <div className="p-4 bg-green-950 border border-green-900 rounded-xl space-y-2">
+        <Section title="Common Ground" count={report.agreements.length}>
+          <div className="rounded-sm border border-[#b6f0d0] bg-[#edfaf3] px-4 py-3 space-y-2">
             {report.agreements.map((a, i) => (
-              <div key={i} className="flex items-start gap-2 text-sm text-green-200">
-                <span className="text-green-500 flex-shrink-0">✓</span>
-                <p>{a}</p>
+              <div key={i} className="flex items-start gap-2">
+                <span className="text-[#1a9e5a] font-bold text-xs flex-shrink-0">✓</span>
+                <p className="text-xs text-[#22303C] leading-snug">{a}</p>
               </div>
             ))}
           </div>
-        </section>
+        </Section>
       )}
 
-      {/* Disclaimer footer */}
-      <footer className="mt-10 pt-4 border-t border-[#2a2d3a] text-center">
-        <p className="text-xs text-[#4a4d5a] italic">
+      {/* ── Footer ── */}
+      <footer className="mt-10 pt-4 border-t border-[#E2E8ED] text-center">
+        <p className="text-[10px] text-[#C2CDD6] italic">
           This report does not declare a winner — verdicts reflect available evidence only.
         </p>
       </footer>

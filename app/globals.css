@@ -11,7 +11,8 @@
 }
 
 body {
-  background: var(--bg);
+  /* No background set here — each page (landing vs session) sets its own bg
+     via className so the light landing page and dark session pages both work. */
   color: var(--text);
   font-family: -apple-system, 'Segoe UI', system-ui, sans-serif;
 }
