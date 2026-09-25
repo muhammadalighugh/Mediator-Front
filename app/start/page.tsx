@@ -474,25 +474,27 @@ export default function StartPage() {
     setTimeout(() => setMode('enrolling'), 0)
   }, [])
 
+  // The session page owns the WS lifecycle (start_session + mic capture).
+  // The start page only needs to upload any pre-selected evidence files, then
+  // navigate. The enrollment socket is torn down automatically when this page
+  // unmounts.
   const handleNamesReady = useCallback(
-    async (names: [string, string], sock: import('@/lib/websocket').MediatorSocket) => {
+    async (names: [string, string], _sock: import('@/lib/websocket').MediatorSocket) => {
       const [a, b] = names
       setMode('launching')
       try {
-        sock.send({ type: 'start_session', speakers: [a, b] })
         for (const f of evidenceFiles) {
           const form = new FormData()
           form.append('file', f)
           await fetch(`http://localhost:8000/upload-evidence/${SESSION_ID}`, { method: 'POST', body: form, headers: { Authorization: `Bearer ${getAuthToken()}` } }).catch(console.warn)
         }
-        sock.disconnect()
         router.push(`/session/${SESSION_ID}?speakers=${encodeURIComponent(JSON.stringify([a, b]))}`)
       } catch (err) {
         console.error('Session launch failed:', err)
         setMode('manual')
       }
     },
-    [evidenceFiles, router, userEmail],
+    [evidenceFiles, router],
   )
 
   const handleManualComplete = useCallback(
@@ -501,29 +503,18 @@ export default function StartPage() {
       const id = generateSessionId()
       setMode('launching')
       try {
-        const { connect } = await import('@/lib/websocket')
-        const sock = connect(id, userEmail, getAuthToken())
-        await new Promise<void>((res, rej) => {
-          const t = setTimeout(() => rej(new Error('WS timeout')), 5000)
-          const unsub = sock.onStatus((s) => {
-            if (s === 'connected') { clearTimeout(t); unsub(); res() }
-            if (s === 'failed')    { clearTimeout(t); unsub(); rej(new Error('Backend not reachable')) }
-          })
-        })
-        sock.send({ type: 'start_session', speakers: [a, b] })
         for (const f of evidenceFiles) {
           const form = new FormData()
           form.append('file', f)
           await fetch(`http://localhost:8000/upload-evidence/${id}`, { method: 'POST', body: form, headers: { Authorization: `Bearer ${getAuthToken()}` } }).catch(console.warn)
         }
-        sock.disconnect()
         router.push(`/session/${id}?speakers=${encodeURIComponent(JSON.stringify([a, b]))}`)
       } catch (err) {
         console.error('Manual session launch failed:', err)
         setMode('manual')
       }
     },
-    [evidenceFiles, router, userEmail],
+    [evidenceFiles, router],
   )
 
   async function handleDemo() {
@@ -745,31 +736,6 @@ export default function StartPage() {
               </p>
             </div>
           </>
-        )}
-
-        {/* ── Dummy session preview ───────────────────────────────────── */}
-        {mode === 'splash' && (
-          <div className="mt-10 w-full max-w-md">
-            <p className="text-xs text-[#003017]/50 uppercase tracking-widest mb-3 font-medium">
-              Preview session
-            </p>
-            <a
-              href="/session/dummy-session"
-              className="block bg-[#003017] border border-[#002d16] px-4 py-3 hover:bg-[#004d26] transition-colors group"
-            >
-              <div className="flex items-center justify-between mb-1.5">
-                <span className="text-[11px] text-white/50">Mar 8, 2024</span>
-                <span className="text-[11px] text-white/40">6 claims</span>
-              </div>
-              <p className="text-[12px] text-white mb-1 font-semibold">Alex · Sam</p>
-              <p className="text-[12px] text-white/60 leading-relaxed line-clamp-2">
-                Expense report deadline dispute — timezone offset between email client and audit log.
-              </p>
-              <span className="mt-2 inline-block text-[11px] text-white/80 font-medium group-hover:text-white group-hover:underline transition-colors">
-                Open session →
-              </span>
-            </a>
-          </div>
         )}
 
         {/* Past sessions */}

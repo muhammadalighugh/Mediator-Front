@@ -263,7 +263,17 @@ export default function LoginModal({ onClose }: LoginModalProps) {
           )}
         </button>
 
-        <p className="mt-5 text-[10px] text-[#C2CDD6] text-center leading-relaxed">
+        <p className="mt-5 text-[11px] text-[#8A9BAA] text-center leading-relaxed">
+          Need access?{' '}
+          <a
+            href="mailto:contact@kodlify.com"
+            className="text-[#003017] font-medium underline underline-offset-2 hover:text-[#004d26] transition-colors"
+          >
+            contact@kodlify.com
+          </a>
+        </p>
+
+        <p className="mt-3 text-[10px] text-[#C2CDD6] text-center leading-relaxed">
           Credentials stored securely in MongoDB Atlas. Passwords are hashed with bcrypt.
         </p>
       </div>

@@ -70,7 +70,7 @@ function SiteNavInner() {
           <div className="hidden md:flex items-center gap-6">
             <a href="/#how-it-works" className="text-white/60 hover:text-white text-sm transition-colors">How it works</a>
             <a href="/#how-it-works" className="text-white/60 hover:text-white text-sm transition-colors">Features</a>
-            <Link href="/business" className="text-white/60 hover:text-white text-sm transition-colors">Business</Link>
+            <Link href="/demo" className="text-white/60 hover:text-white text-sm transition-colors">Demo</Link>
           </div>
 
           {/* CTA */}
