@@ -129,12 +129,13 @@ export interface EnrollmentResultMessage {
 /** Messages the SERVER sends to the client */
 export type ServerMessage =
   | EnrollmentResultMessage
-  | { type: 'speakers_updated';   speakers: Speaker[] }
-  | { type: 'transcript_partial'; speaker_id: string | null; text: string; start_ms: number; end_ms: number }
-  | { type: 'transcript_final';   speaker_id: string | null; text: string; start_ms: number; end_ms: number; utterance_id: string }
-  | { type: 'claims_updated';     claims: Claim[] }
-  | { type: 'contradictions';     contradictions: ContradictionFlag[]; agreements: string[]; dispute_type: string }
+  | { type: 'speakers_updated';    speakers: Speaker[] }
+  | { type: 'transcript_partial';  speaker_id: string | null; text: string; start_ms: number; end_ms: number }
+  | { type: 'transcript_final';    speaker_id: string | null; text: string; start_ms: number; end_ms: number; utterance_id: string }
+  | { type: 'transcript_revised';  utterance_id: string; turn_order: number; speaker_id: string | null }
+  | { type: 'claims_updated';      claims: Claim[] }
+  | { type: 'contradictions';      contradictions: ContradictionFlag[]; agreements: string[]; dispute_type: string }
   | { type: 'clarifying_question'; question: string; contradiction: ContradictionFlag }
-  | { type: 'report_ready';       report: MediationReport }
-  | { type: 'session_ended';      wav_path: string }
-  | { type: 'error';              detail: string }
+  | { type: 'report_ready';        report: MediationReport }
+  | { type: 'session_ended';       wav_path: string }
+  | { type: 'error';               detail: string }

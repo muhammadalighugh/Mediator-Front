@@ -115,6 +115,7 @@ export default function SessionPage() {
   const [activeQuestion, setActiveQuestion] = useState<string | null>(null)
   const [wsStatus,       setWsStatus]       = useState<string>('connecting')
   const [micError,       setMicError]       = useState<string | null>(null)
+  const [wsError,        setWsError]        = useState<string | null>(null)
 
   // speakerMap is derived from speakers state — recomputed on every speakers update
   const speakerMap = buildSpeakerMap(speakers)
@@ -212,6 +213,20 @@ export default function SessionPage() {
         })
       }
 
+      if (msg.type === 'transcript_revised') {
+        // Backend revised the speaker attribution for a previously-final turn
+        // (fired by AssemblyAI's end-of-session offline reclustering).
+        // Find the row by utterance_id and update speaker_id in place.
+        setTranscript((prev) => {
+          const idx = prev.findIndex((e) => e.id === msg.utterance_id)
+          if (idx === -1) return prev          // row already gone or never seen
+          if (prev[idx].speaker_id === msg.speaker_id) return prev  // no change
+          const next = [...prev]
+          next[idx] = { ...prev[idx], speaker_id: msg.speaker_id }
+          return next
+        })
+      }
+
       if (msg.type === 'claims_updated') {
         setClaims(msg.claims)
       }
@@ -230,6 +245,7 @@ export default function SessionPage() {
 
       if (msg.type === 'error') {
         console.error('[Session WS error]', msg.detail)
+        setWsError(msg.detail)
       }
     })
 
@@ -383,6 +399,14 @@ export default function SessionPage() {
       {micError && (
         <div className="flex-shrink-0 px-4 py-2 bg-red-50 border-b border-red-200 text-xs text-red-700">
           {micError}
+        </div>
+      )}
+
+      {/* Backend error banner (e.g. LLM API key invalid, claim extraction failed) */}
+      {wsError && (
+        <div className="flex-shrink-0 px-4 py-2 bg-amber-50 border-b border-amber-200 text-xs text-amber-800 flex items-center justify-between gap-2">
+          <span>⚠ {wsError}</span>
+          <button onClick={() => setWsError(null)} className="text-amber-600 hover:text-amber-900 font-medium">✕</button>
         </div>
       )}
 

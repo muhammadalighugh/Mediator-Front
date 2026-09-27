@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import type { MediationReport as Report, Claim, EvidenceLink, ContradictionFlag, SpeakerAssessment, VerdictType } from '@/lib/types'
+import { getAuthToken } from '@/lib/useRequireAuth'
 
 const API_BASE =
   (typeof process !== 'undefined' && process.env.NEXT_PUBLIC_API_URL) ||
@@ -76,23 +77,29 @@ function getFavorabilityLine(
 }
 
 export default function MediationReportView({ report, speakerMap, sessionId }: MediationReportProps) {
-  const [pdfState, setPdfState] = useState<'idle' | 'generating'>('idle')
+  const [pdfState, setPdfState] = useState<'idle' | 'generating' | 'error'>('idle')
 
   async function handleDownloadPdf() {
     if (pdfState === 'generating') return
     setPdfState('generating')
     try {
-      const res = await fetch(`${API_BASE}/report/${sessionId}/pdf`)
+      const res = await fetch(`${API_BASE}/report/${sessionId}/pdf`, {
+        headers: { Authorization: `Bearer ${getAuthToken()}` },
+      })
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       const blob = await res.blob()
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
       a.download = `mediation-report-${sessionId}.pdf`
+      document.body.appendChild(a)
       a.click()
+      document.body.removeChild(a)
       URL.revokeObjectURL(url)
     } catch (err) {
       console.error('PDF download failed:', err)
+      setPdfState('error' as never)
+      setTimeout(() => setPdfState('idle'), 3000)
     } finally {
       setPdfState('idle')
     }
@@ -140,9 +147,13 @@ export default function MediationReportView({ report, speakerMap, sessionId }: M
             <button
               onClick={handleDownloadPdf}
               disabled={pdfState === 'generating'}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-semibold border border-[#003017] text-[#003017] hover:bg-[#003017] hover:text-white disabled:opacity-50 transition-colors rounded-sm"
+              className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-semibold border transition-colors rounded-sm disabled:opacity-50 ${
+                pdfState === 'error'
+                  ? 'border-red-400 text-red-600 bg-red-50'
+                  : 'border-[#003017] text-[#003017] hover:bg-[#003017] hover:text-white'
+              }`}
             >
-              {pdfState === 'generating' ? 'Generating…' : '↓ Download PDF'}
+              {pdfState === 'generating' ? 'Generating…' : pdfState === 'error' ? '✕ Download failed' : '↓ Download PDF'}
             </button>
           )}
         </div>

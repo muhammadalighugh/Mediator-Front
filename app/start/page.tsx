@@ -16,7 +16,7 @@ const TEST_MODE: boolean =
 
 const TEST_SPEAKERS: [string, string] = ['Speaker 1', 'Speaker 2']
 
-const DEMO_SPEAKERS = ['Alex', 'Sam']
+const DEMO_SPEAKERS = ['Speaker 1', 'Speaker 2']
 const DEMO_EVIDENCE_FILES = [
   '/demo/sample_evidence/expense_log.csv',
   '/demo/sample_evidence/messages.txt',

@@ -1,11 +1,18 @@
 'use client'
 
 import { useState, useRef, useCallback } from 'react'
-import { Paperclip, CheckCircle } from 'lucide-react'
+import { Paperclip, CheckCircle, Loader2, AlertCircle } from 'lucide-react'
+import { getAuthToken } from '@/lib/useRequireAuth'
 
-interface UploadedSource {
+const API_BASE =
+  (typeof process !== 'undefined' && process.env.NEXT_PUBLIC_API_URL) ||
+  'http://localhost:8000'
+
+interface SourceEntry {
   filename: string
   chunks: number
+  status: 'uploading' | 'done' | 'error'
+  error?: string
 }
 
 interface EvidenceUploadProps {
@@ -13,36 +20,71 @@ interface EvidenceUploadProps {
 }
 
 export default function EvidenceUpload({ sessionId }: EvidenceUploadProps) {
-  const [sources, setSources] = useState<UploadedSource[]>([])
+  const [sources, setSources]   = useState<SourceEntry[]>([])
   const [dragging, setDragging] = useState(false)
-  const [uploading, setUploading] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
 
+  // true while any file is still in the 'uploading' state
+  const isUploading = sources.some((s) => s.status === 'uploading')
+
   const uploadFile = useCallback(async (file: File) => {
-    setUploading(true)
+    const name = file.name
+
+    // Add a placeholder row immediately so the user sees feedback at once
+    setSources((prev) => [
+      ...prev,
+      { filename: name, chunks: 0, status: 'uploading' },
+    ])
+
     try {
       const form = new FormData()
       form.append('file', file)
-      const res = await fetch(`http://localhost:8000/upload-evidence/${sessionId}`, {
+
+      const res = await fetch(`${API_BASE}/upload-evidence/${sessionId}`, {
         method: 'POST',
+        headers: {
+          Authorization: `Bearer ${getAuthToken()}`,
+        },
         body: form,
       })
+
       if (!res.ok) {
         const err = await res.json().catch(() => ({ detail: res.statusText }))
-        console.error('Upload failed:', err.detail)
+        setSources((prev) =>
+          prev.map((s) =>
+            s.filename === name && s.status === 'uploading'
+              ? { ...s, status: 'error', error: err.detail ?? 'Upload failed' }
+              : s
+          )
+        )
         return
       }
+
       const data = await res.json()
-      const cleanName = file.name.replace(/\.(?:txt|md|csv|pdf)(\.(?:txt|md|csv|pdf))$/i, '$1')
-      setSources((prev) => [...prev, { filename: cleanName, chunks: data.chunks_ingested }])
-    } finally {
-      setUploading(false)
+      setSources((prev) =>
+        prev.map((s) =>
+          s.filename === name && s.status === 'uploading'
+            ? { ...s, status: 'done', chunks: data.chunks_ingested }
+            : s
+        )
+      )
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Network error'
+      setSources((prev) =>
+        prev.map((s) =>
+          s.filename === name && s.status === 'uploading'
+            ? { ...s, status: 'error', error: msg }
+            : s
+        )
+      )
     }
   }, [sessionId])
 
   const handleFiles = useCallback(
-    (files: FileList | null) => { if (files) Array.from(files).forEach(uploadFile) },
-    [uploadFile]
+    (files: FileList | null) => {
+      if (files) Array.from(files).forEach(uploadFile)
+    },
+    [uploadFile],
   )
 
   return (
@@ -56,7 +98,11 @@ export default function EvidenceUpload({ sessionId }: EvidenceUploadProps) {
       <div
         onDragOver={(e) => { e.preventDefault(); setDragging(true) }}
         onDragLeave={() => setDragging(false)}
-        onDrop={(e) => { e.preventDefault(); setDragging(false); handleFiles(e.dataTransfer.files) }}
+        onDrop={(e) => {
+          e.preventDefault()
+          setDragging(false)
+          handleFiles(e.dataTransfer.files)
+        }}
         onClick={() => fileRef.current?.click()}
         className={`flex items-center gap-2 border border-dashed rounded-sm px-3 py-2.5 cursor-pointer transition-colors text-xs ${
           dragging
@@ -65,10 +111,17 @@ export default function EvidenceUpload({ sessionId }: EvidenceUploadProps) {
         }`}
       >
         <Paperclip size={13} strokeWidth={2} className="flex-shrink-0 text-[#003017]/60" />
-        {uploading
-          ? <span className="text-[#003017] animate-pulse">Uploading…</span>
-          : <span>Drop files or click · <span className="text-[#003017]/50">txt  md  csv  pdf</span></span>
-        }
+        {isUploading ? (
+          <span className="flex items-center gap-1.5 text-[#003017]">
+            <Loader2 size={12} strokeWidth={2} className="animate-spin" />
+            Uploading…
+          </span>
+        ) : (
+          <span>
+            Drop files or click ·{' '}
+            <span className="text-[#003017]/50">txt&nbsp; md&nbsp; csv&nbsp; pdf</span>
+          </span>
+        )}
       </div>
 
       <input
@@ -80,14 +133,42 @@ export default function EvidenceUpload({ sessionId }: EvidenceUploadProps) {
         onChange={(e) => handleFiles(e.target.files)}
       />
 
-      {/* Uploaded files */}
+      {/* Per-file status list */}
       {sources.length > 0 && (
         <ul className="mt-2 space-y-1">
           {sources.map((s, i) => (
-            <li key={i} className="flex items-center gap-1.5 text-xs">
-              <CheckCircle size={11} strokeWidth={2} className="text-[#003017] flex-shrink-0" />
-              <span className="truncate text-[#22303C] font-medium">{s.filename}</span>
-              <span className="text-[#C2CDD6] flex-shrink-0">{s.chunks} chunks</span>
+            <li key={i} className="flex items-center gap-1.5 text-xs min-w-0">
+              {s.status === 'uploading' && (
+                <Loader2
+                  size={11}
+                  strokeWidth={2}
+                  className="animate-spin text-[#003017]/60 flex-shrink-0"
+                />
+              )}
+              {s.status === 'done' && (
+                <CheckCircle size={11} strokeWidth={2} className="text-[#003017] flex-shrink-0" />
+              )}
+              {s.status === 'error' && (
+                <AlertCircle size={11} strokeWidth={2} className="text-red-500 flex-shrink-0" />
+              )}
+
+              <span
+                className={`truncate font-medium ${
+                  s.status === 'error' ? 'text-red-600' : 'text-[#22303C]'
+                }`}
+              >
+                {s.filename}
+              </span>
+
+              {s.status === 'uploading' && (
+                <span className="text-[#C2CDD6] flex-shrink-0">uploading…</span>
+              )}
+              {s.status === 'done' && (
+                <span className="text-[#C2CDD6] flex-shrink-0">{s.chunks} chunks</span>
+              )}
+              {s.status === 'error' && (
+                <span className="text-red-400 flex-shrink-0 truncate">{s.error}</span>
+              )}
             </li>
           ))}
         </ul>

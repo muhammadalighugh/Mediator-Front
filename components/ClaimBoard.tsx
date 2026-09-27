@@ -7,11 +7,11 @@ interface ClaimBoardProps {
   speakers: Speaker[]
 }
 
-const COLUMNS: { type: StatementType; label: string; bg: string; border: string; text: string; dot: string }[] = [
-  { type: 'fact',         label: 'Facts',       bg: 'bg-[#003017]',  border: 'border-[#002d16]', text: 'text-white',        dot: 'bg-white' },
-  { type: 'claim',        label: 'Claims',      bg: 'bg-white',      border: 'border-[#003017]',  text: 'text-[#003017]',   dot: 'bg-[#003017]' },
-  { type: 'assumption',   label: 'Assumptions', bg: 'bg-[#003017]',  border: 'border-[#002d16]', text: 'text-white',        dot: 'bg-white' },
-  { type: 'evidence_ref', label: 'Evidence',    bg: 'bg-white',      border: 'border-[#003017]',  text: 'text-[#003017]',   dot: 'bg-[#003017]' },
+const COLUMNS: { type: StatementType; label: string; bg: string; text: string; dot: string }[] = [
+  { type: 'fact',         label: 'Facts',       bg: 'bg-[#003017]',  text: 'text-white',      dot: 'bg-white' },
+  { type: 'claim',        label: 'Claims',      bg: 'bg-white',      text: 'text-[#003017]',  dot: 'bg-[#003017]' },
+  { type: 'assumption',   label: 'Assumptions', bg: 'bg-[#003017]',  text: 'text-white',      dot: 'bg-white' },
+  { type: 'evidence_ref', label: 'Evidence',    bg: 'bg-white',      text: 'text-[#003017]',  dot: 'bg-[#003017]' },
 ]
 
 function ConfidenceBar({ value }: { value: number }) {
@@ -39,13 +39,17 @@ export default function ClaimBoard({ claims, speakers }: ClaimBoardProps) {
       </div>
 
       <div className="grid grid-cols-2 gap-2 flex-1 overflow-hidden">
-        {COLUMNS.map(({ type, label, bg, border, text, dot }) => {
-          const col = claims.filter((c) => c.statement_type === type)
+        {COLUMNS.map(({ type, label, bg, text, dot }) => {
+          // 'opinion' has no dedicated column — fold it into 'claim' for display
+          const col = claims.filter((c) =>
+            c.statement_type === type ||
+            (type === 'claim' && c.statement_type === 'opinion')
+          )
           return (
-            <div key={type} className={`flex flex-col rounded-md border overflow-hidden ${bg} ${border}`}>
+            <div key={type} className={`flex flex-col rounded-md overflow-hidden ${bg}`}>
 
               {/* Column header */}
-              <div className={`px-2.5 py-1.5 border-b ${border} flex items-center justify-between`}>
+              <div className={`px-2.5 py-1.5 flex items-center justify-between`}>
                 <span className={`text-[10px] font-semibold flex items-center gap-1.5 uppercase tracking-wide ${text}`}>
                   <span className={`w-1.5 h-1.5 rounded-full ${dot}`} />
                   {label}
@@ -61,13 +65,12 @@ export default function ClaimBoard({ claims, speakers }: ClaimBoardProps) {
                 {col.map((claim) => {
                   const spk = claim.speaker_id ? speakerMap.get(claim.speaker_id) : null
                   // Badge: opposite of column — green col gets white badge, white col gets green badge
-                  const badgeBg   = bg === 'bg-[#003017]' ? 'bg-white'     : 'bg-[#003017]'
+                  const badgeBg   = bg === 'bg-[#003017]' ? 'bg-white'       : 'bg-[#003017]'
                   const badgeText = bg === 'bg-[#003017]' ? 'text-[#003017]' : 'text-white'
-                  const badgeBorder = bg === 'bg-[#003017]' ? 'border-[#003017]' : 'border-[#002d16]'
                   return (
-                    <div key={claim.id} className={`relative rounded-md px-2 pt-4 pb-2 border ${border} bg-white/10`}>
+                    <div key={claim.id} className={`relative rounded-md px-2 pt-4 pb-2 bg-white/10`}>
                       {spk && (
-                        <span className={`absolute -top-2 left-2 inline-flex items-center px-1.5 py-px rounded-sm text-[8px] font-semibold border ${badgeBg} ${badgeText} ${badgeBorder}`}>
+                        <span className={`absolute -top-2 left-2 inline-flex items-center px-1.5 py-px rounded-sm text-[8px] font-semibold ${badgeBg} ${badgeText}`}>
                           {spk.display_name}
                         </span>
                       )}
