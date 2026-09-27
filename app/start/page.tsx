@@ -562,12 +562,12 @@ export default function StartPage() {
       <header className="w-full border-b border-[#E2E8ED] bg-white">
         <div className="flex items-center justify-between px-6 py-3 max-w-5xl mx-auto">
           {/* Logo */}
-          <div className="flex items-center gap-2">
+          <a href="/" className="flex items-center gap-2 hover:opacity-80 transition-opacity">
             <div className="w-7 h-7 rounded-sm bg-[#003017] flex items-center justify-center">
               <img src="/logo.png" alt="MediFact logo" className="w-3.5 h-3.5 object-contain" />
             </div>
             <span className="text-[#003017] text-sm font-semibold">MediFact</span>
-          </div>
+          </a>
           {/* User strip */}
           <div className="flex items-center gap-3">
             <span className="text-xs text-[#5A6A75]">

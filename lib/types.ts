@@ -86,6 +86,8 @@ export interface SpeakerAssessment {
   checkable_total: number   // supported + contradicted
 }
 
+export type ReportKind = 'dispute' | 'conversation'
+
 export interface MediationReport {
   session_id: string
   claims: Claim[]
@@ -95,6 +97,7 @@ export interface MediationReport {
   dispute_type: string
   summary: string
   assessments: SpeakerAssessment[]
+  report_kind: ReportKind   // "dispute" (default) | "conversation" (trivial/no-claims)
 }
 
 // ---------------------------------------------------------------------------
@@ -126,6 +129,7 @@ export interface EnrollmentResultMessage {
 /** Messages the SERVER sends to the client */
 export type ServerMessage =
   | EnrollmentResultMessage
+  | { type: 'speakers_updated';   speakers: Speaker[] }
   | { type: 'transcript_partial'; speaker_id: string | null; text: string; start_ms: number; end_ms: number }
   | { type: 'transcript_final';   speaker_id: string | null; text: string; start_ms: number; end_ms: number; utterance_id: string }
   | { type: 'claims_updated';     claims: Claim[] }

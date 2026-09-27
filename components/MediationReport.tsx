@@ -59,7 +59,9 @@ function Section({ title, children, count }: { title: string; children: React.Re
 function getFavorabilityLine(
   assessments: SpeakerAssessment[],
   speakerMap: Map<string, { display_name: string; color: string }>,
+  isConversation: boolean,
 ): string {
+  if (isConversation) return 'No claims to evaluate.'
   if (assessments.length < 2) return 'The evidence does not clearly favor either party.'
   const [a, b] = assessments
   const scoreA = a.supported - a.contradicted
@@ -96,6 +98,8 @@ export default function MediationReportView({ report, speakerMap, sessionId }: M
     }
   }
 
+  const isConversation = (report.report_kind ?? 'dispute') === 'conversation'
+
   const claimMap = new Map<string, Claim>(report.claims.map((c) => [c.id, c]))
   const verdictMap = new Map<string, EvidenceLink>(report.verdicts.map((v) => [v.claim_id, v]))
 
@@ -109,7 +113,7 @@ export default function MediationReportView({ report, speakerMap, sessionId }: M
     ...report.claims.filter((c) => c.statement_type === 'opinion'),
   ]
 
-  const favorabilityLine = getFavorabilityLine(report.assessments ?? [], speakerMap)
+  const favorabilityLine = getFavorabilityLine(report.assessments ?? [], speakerMap, isConversation)
 
   return (
     <div className="max-w-5xl mx-auto px-6 py-8 text-[#22303C]">
@@ -117,13 +121,21 @@ export default function MediationReportView({ report, speakerMap, sessionId }: M
       {/* ── Header ── */}
       <div className="flex items-start justify-between mb-8 flex-wrap gap-4">
         <div>
-          <h1 className="text-lg font-bold text-[#003017] mb-0.5">Mediation Report</h1>
+          <h1 className="text-lg font-bold text-[#003017] mb-0.5">
+            {isConversation ? 'Session Summary' : 'Mediation Report'}
+          </h1>
           <p className="text-[10px] text-[#9EAAB8] font-mono">session · {report.session_id}</p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
-          <span className="inline-block px-2.5 py-1 rounded-sm text-[10px] font-semibold border bg-[#003017] text-white border-[#002d16] uppercase tracking-wide">
-            {report.dispute_type}
-          </span>
+          {isConversation ? (
+            <span className="inline-block px-2.5 py-1 rounded-sm text-[10px] font-semibold border bg-[#f0faf4] text-[#1a9e5a] border-[#b6f0d0] uppercase tracking-wide">
+              Friendly conversation
+            </span>
+          ) : (
+            <span className="inline-block px-2.5 py-1 rounded-sm text-[10px] font-semibold border bg-[#003017] text-white border-[#002d16] uppercase tracking-wide">
+              {report.dispute_type}
+            </span>
+          )}
           {sessionId && (
             <button
               onClick={handleDownloadPdf}
@@ -136,15 +148,27 @@ export default function MediationReportView({ report, speakerMap, sessionId }: M
         </div>
       </div>
 
-      {/* ── Executive summary ── */}
-      <Section title="Executive Summary">
-        <div className="rounded-sm border border-[#E2E8ED] bg-white px-4 py-3">
-          <p className="text-sm text-[#22303C] leading-relaxed">{report.summary}</p>
-        </div>
-      </Section>
+      {/* ── Friendly conversation banner (conversation kind only) ── */}
+      {isConversation && (
+        <Section title="Summary">
+          <div className="rounded-sm border border-[#b6f0d0] bg-[#f0faf4] px-4 py-5 flex items-start gap-3">
+            <span className="text-[#1a9e5a] text-lg leading-none flex-shrink-0">✓</span>
+            <p className="text-sm text-[#22303C] leading-relaxed">{report.summary}</p>
+          </div>
+        </Section>
+      )}
 
-      {/* ── Assessment ── */}
-      {(report.assessments ?? []).length > 0 && (
+      {/* ── Executive summary (dispute kind only) ── */}
+      {!isConversation && (
+        <Section title="Executive Summary">
+          <div className="rounded-sm border border-[#E2E8ED] bg-white px-4 py-3">
+            <p className="text-sm text-[#22303C] leading-relaxed">{report.summary}</p>
+          </div>
+        </Section>
+      )}
+
+      {/* ── Assessment (dispute kind only) ── */}
+      {!isConversation && (report.assessments ?? []).length > 0 && (
         <Section title="Assessment">
           <div className="rounded-sm border border-[#E2E8ED] bg-white px-4 py-3 space-y-3">
             {(report.assessments ?? []).map((a) => {
@@ -186,8 +210,8 @@ export default function MediationReportView({ report, speakerMap, sessionId }: M
         </Section>
       )}
 
-      {/* ── Claim Verdicts ── */}
-      <Section title="Claim Verdicts" count={verdictClaims.length}>
+      {/* ── Claim Verdicts (dispute kind only) ── */}
+      {!isConversation && <Section title="Claim Verdicts" count={verdictClaims.length}>
         <div className="rounded-sm border border-[#E2E8ED] overflow-hidden">
           <table className="w-full text-xs">
             <thead>
@@ -248,10 +272,10 @@ export default function MediationReportView({ report, speakerMap, sessionId }: M
             </tbody>
           </table>
         </div>
-      </Section>
+      </Section>}
 
-      {/* ── Evidence references & opinions ── */}
-      {skippedClaims.length > 0 && (
+      {/* ── Evidence references & opinions (dispute kind only) ── */}
+      {!isConversation && skippedClaims.length > 0 && (
         <Section title="Evidence References & Opinions" count={skippedClaims.length}>
           <div className="rounded-sm border border-[#E2E8ED] overflow-hidden">
             {skippedClaims.map((claim, i) => {
@@ -278,8 +302,8 @@ export default function MediationReportView({ report, speakerMap, sessionId }: M
         </Section>
       )}
 
-      {/* ── Contradictions ── */}
-      {report.contradictions.length > 0 && (
+      {/* ── Contradictions (dispute kind only) ── */}
+      {!isConversation && report.contradictions.length > 0 && (
         <Section title="Contradictions" count={report.contradictions.length}>
           <div className="space-y-3">
             {report.contradictions.map((flag, i) => {
@@ -325,8 +349,8 @@ export default function MediationReportView({ report, speakerMap, sessionId }: M
         </Section>
       )}
 
-      {/* ── Common Ground ── */}
-      {report.agreements.length > 0 && (
+      {/* ── Common Ground (dispute kind only) ── */}
+      {!isConversation && report.agreements.length > 0 && (
         <Section title="Common Ground" count={report.agreements.length}>
           <div className="rounded-sm border border-[#b6f0d0] bg-[#edfaf3] px-4 py-3 space-y-2">
             {report.agreements.map((a, i) => (
@@ -342,7 +366,9 @@ export default function MediationReportView({ report, speakerMap, sessionId }: M
       {/* ── Footer ── */}
       <footer className="mt-10 pt-4 border-t border-[#E2E8ED] text-center">
         <p className="text-[10px] text-[#C2CDD6] italic">
-          This report does not declare a winner — verdicts reflect available evidence only.
+          {isConversation
+            ? 'No dispute was detected in this session.'
+            : 'This report does not declare a winner — verdicts reflect available evidence only.'}
         </p>
       </footer>
     </div>

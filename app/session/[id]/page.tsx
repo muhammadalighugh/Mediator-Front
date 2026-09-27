@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { useParams, useSearchParams } from 'next/navigation'
 import { Pause, Play } from 'lucide-react'
 import LiveTranscript from '@/components/LiveTranscript'
@@ -12,6 +12,45 @@ import type { Claim, MediationReport, Speaker } from '@/lib/types'
 import { useRequireAuth, getAuthToken } from '@/lib/useRequireAuth'
 import { connect, type MediatorSocket } from '@/lib/websocket'
 import { MicCapture } from '@/lib/micCapture'
+
+const API_BASE =
+  (typeof process !== 'undefined' && process.env.NEXT_PUBLIC_API_URL) ||
+  'http://localhost:8000'
+
+/** Poll GET /report/{sessionId} until it returns 200, then call onReport. */
+async function pollForReport(
+  sessionId: string,
+  token: string,
+  onReport: (r: MediationReport) => void,
+  signal: AbortSignal,
+): Promise<void> {
+  const INTERVAL_MS  = 2_000   // check every 2 s
+  const MAX_ATTEMPTS = 60      // give up after ~2 min
+
+  for (let i = 0; i < MAX_ATTEMPTS; i++) {
+    if (signal.aborted) return
+    await new Promise<void>((res) => {
+      const t = setTimeout(res, INTERVAL_MS)
+      signal.addEventListener('abort', () => { clearTimeout(t); res() }, { once: true })
+    })
+    if (signal.aborted) return
+    try {
+      const res = await fetch(`${API_BASE}/report/${sessionId}`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        signal,
+      })
+      if (res.ok) {
+        const report = await res.json() as MediationReport
+        onReport(report)
+        return
+      }
+      // 404 = not ready yet; anything else is unexpected but keep trying
+    } catch {
+      if (signal.aborted) return
+      // network error — keep polling
+    }
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Types
@@ -31,12 +70,18 @@ interface TranscriptEntry {
 
 const SPEAKER_COLORS = ['#6366f1', '#f59e0b', '#10b981', '#ef4444', '#8b5cf6', '#ec4899']
 
+const UNKNOWN_SPEAKER: Speaker = { id: 'speaker_unknown', display_name: 'Unknown', color: '#7b8096' }
+
 function buildSpeakers(names: string[]): Speaker[] {
   return names.map((name, i) => ({
     id: `speaker_${i}`,
     display_name: name,
     color: SPEAKER_COLORS[i % SPEAKER_COLORS.length],
   }))
+}
+
+function buildSpeakerMap(speakers: Speaker[]): Map<string, Speaker> {
+  return new Map([...speakers, UNKNOWN_SPEAKER].map((s) => [s.id, s]))
 }
 
 // ---------------------------------------------------------------------------
@@ -50,22 +95,17 @@ export default function SessionPage() {
   const searchParams = useSearchParams()
   const sessionId    = params.id
 
-  // Parse speaker names from ?speakers=[...] query param
-  const speakerNames: string[] = (() => {
+  // Parse speaker names from ?speakers=[...] query param (initial / fallback values)
+  const initialSpeakers: Speaker[] = (() => {
     try {
       const raw = searchParams.get('speakers')
-      if (raw) return JSON.parse(raw) as string[]
+      if (raw) return buildSpeakers(JSON.parse(raw) as string[])
     } catch { /* ignore */ }
-    return ['Speaker 1', 'Speaker 2']
+    return buildSpeakers(['Speaker 1', 'Speaker 2'])
   })()
 
-  const speakers = buildSpeakers(speakerNames)
-  const speakerMap = new Map(
-    [...speakers, { id: 'speaker_unknown', display_name: 'Unknown', color: '#7b8096' }]
-      .map((s) => [s.id, s])
-  )
-
   // ── State ──────────────────────────────────────────────────────────────────
+  const [speakers,       setSpeakers]       = useState<Speaker[]>(initialSpeakers)
   const [transcript,     setTranscript]     = useState<TranscriptEntry[]>([])
   const [claims,         setClaims]         = useState<Claim[]>([])
   const [report,         setReport]         = useState<MediationReport | null>(null)
@@ -76,9 +116,21 @@ export default function SessionPage() {
   const [wsStatus,       setWsStatus]       = useState<string>('connecting')
   const [micError,       setMicError]       = useState<string | null>(null)
 
-  const sockRef  = useRef<MediatorSocket | null>(null)
-  const micRef   = useRef<MicCapture | null>(null)
-  const pausedRef = useRef(false)
+  // speakerMap is derived from speakers state — recomputed on every speakers update
+  const speakerMap = buildSpeakerMap(speakers)
+
+  const sockRef    = useRef<MediatorSocket | null>(null)
+  const micRef     = useRef<MicCapture | null>(null)
+  const pausedRef  = useRef(false)
+  /** AbortController for the report-polling loop — cancelled on unmount or WS delivery. */
+  const pollAbortRef = useRef<AbortController | null>(null)
+
+  /** Called by both the WS path and the poll path — idempotent. */
+  const receiveReport = useCallback((r: MediationReport) => {
+    pollAbortRef.current?.abort()
+    setReport(r)
+    setShowReport(true)
+  }, [])
 
   // Sync paused → mic in real time (no restart needed — MicCapture just drops frames)
   useEffect(() => {
@@ -100,14 +152,32 @@ export default function SessionPage() {
 
     const unsubStatus = sock.onStatus((s) => {
       setWsStatus(s)
-      // Once connected: send start_session and start the mic
+      // Once connected: send start_session and start the mic.
+      // speakerNames comes from the URL query param — the backend will
+      // override these with real enrolled names via speakers_updated.
       if (s === 'connected') {
-        sock.send({ type: 'start_session', speakers: speakerNames })
+        const urlNames = (() => {
+          try {
+            const raw = searchParams.get('speakers')
+            if (raw) return JSON.parse(raw) as string[]
+          } catch { /* ignore */ }
+          return ['Speaker 1', 'Speaker 2']
+        })()
+        sock.send({ type: 'start_session', speakers: urlNames })
         _startMic(sock)
       }
     })
 
     const unsubMsg = sock.on((msg) => {
+      if (msg.type === 'speakers_updated') {
+        // Backend has resolved real names from enrollment — replace the entire
+        // speaker list. Because LiveTranscript and ClaimBoard look up the
+        // display name from the speakers prop at render time (not stored
+        // as a string in the entry), every existing row automatically
+        // re-renders with the correct name.
+        setSpeakers(msg.speakers)
+      }
+
       if (msg.type === 'transcript_partial') {
         setTranscript((prev) => {
           const partialIdx = prev.findIndex((e) => !e.is_final && e.speaker_id === msg.speaker_id)
@@ -151,8 +221,7 @@ export default function SessionPage() {
       }
 
       if (msg.type === 'report_ready') {
-        setReport(msg.report)
-        setShowReport(true)
+        receiveReport(msg.report)
       }
 
       if (msg.type === 'session_ended') {
@@ -169,6 +238,7 @@ export default function SessionPage() {
       unsubMsg()
       micRef.current?.stop()
       micRef.current = null
+      pollAbortRef.current?.abort()
       sock.disconnect()
     }
     // speakerNames is derived from URL — stable for the lifetime of the page
@@ -194,6 +264,15 @@ export default function SessionPage() {
     micRef.current?.stop()
     micRef.current = null
     sockRef.current?.send({ type: 'end_session' })
+
+    // The backend builds the report async after end_session — the WS may
+    // already be closing by the time it's ready. Start a poll loop so we
+    // get the report even when the WS delivery misses.
+    let token = ''
+    try { token = getAuthToken() ?? '' } catch { /* ignore */ }
+    const ac = new AbortController()
+    pollAbortRef.current = ac
+    pollForReport(sessionId, token, receiveReport, ac.signal)
   }
 
   // ── Report view ────────────────────────────────────────────────────────────
@@ -332,7 +411,7 @@ export default function SessionPage() {
             <EvidenceUpload sessionId={sessionId} />
           </div>
 
-          {/* Claim board */}
+          {/* Claim board — speakers is reactive state, re-renders on speakers_updated */}
           <div className="flex-1 px-3 py-3 overflow-hidden bg-[#FDFDFD]">
             <ClaimBoard claims={claims} speakers={speakers} />
           </div>
