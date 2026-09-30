@@ -3,6 +3,10 @@
 import { useEffect, useState } from 'react'
 import type { ReportKind } from '@/lib/types'
 
+const API_BASE =
+  (typeof process !== 'undefined' && process.env.NEXT_PUBLIC_API_URL) ||
+  'http://localhost:8000'
+
 interface SessionDoc {
   session_id: string
   user_email: string | null
@@ -32,7 +36,7 @@ export default function PastSessions({ email }: PastSessionsProps) {
     async function load() {
       try {
         const res = await fetch(
-          `http://localhost:8000/sessions/${encodeURIComponent(email)}`,
+          `${API_BASE}/sessions/${encodeURIComponent(email)}`,
         )
         if (cancelled) return
 

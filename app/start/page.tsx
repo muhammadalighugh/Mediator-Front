@@ -14,6 +14,10 @@ import { useRequireAuth, getAuthToken } from '@/lib/useRequireAuth'
 const TEST_MODE: boolean =
   process.env.NEXT_PUBLIC_TEST_MODE !== 'false'
 
+const API_BASE =
+  (typeof process !== 'undefined' && process.env.NEXT_PUBLIC_API_URL) ||
+  'http://localhost:8000'
+
 const TEST_SPEAKERS: [string, string] = ['Speaker 1', 'Speaker 2']
 
 const DEMO_SPEAKERS = ['Speaker 1', 'Speaker 2']
@@ -486,7 +490,7 @@ export default function StartPage() {
         for (const f of evidenceFiles) {
           const form = new FormData()
           form.append('file', f)
-          await fetch(`http://localhost:8000/upload-evidence/${SESSION_ID}`, { method: 'POST', body: form, headers: { Authorization: `Bearer ${getAuthToken()}` } }).catch(console.warn)
+          await fetch(`${API_BASE}/upload-evidence/${SESSION_ID}`, { method: 'POST', body: form, headers: { Authorization: `Bearer ${getAuthToken()}` } }).catch(console.warn)
         }
         router.push(`/session/${SESSION_ID}?speakers=${encodeURIComponent(JSON.stringify([a, b]))}`)
       } catch (err) {
@@ -506,7 +510,7 @@ export default function StartPage() {
         for (const f of evidenceFiles) {
           const form = new FormData()
           form.append('file', f)
-          await fetch(`http://localhost:8000/upload-evidence/${id}`, { method: 'POST', body: form, headers: { Authorization: `Bearer ${getAuthToken()}` } }).catch(console.warn)
+          await fetch(`${API_BASE}/upload-evidence/${id}`, { method: 'POST', body: form, headers: { Authorization: `Bearer ${getAuthToken()}` } }).catch(console.warn)
         }
         router.push(`/session/${id}?speakers=${encodeURIComponent(JSON.stringify([a, b]))}`)
       } catch (err) {
@@ -540,7 +544,7 @@ export default function StartPage() {
         const filename = path.split('/').pop()!
         const form = new FormData()
         form.append('file', new File([blob], filename))
-        await fetch(`http://localhost:8000/upload-evidence/${id}`, { method: 'POST', body: form, headers: { Authorization: `Bearer ${getAuthToken()}` } }).catch(console.warn)
+        await fetch(`${API_BASE}/upload-evidence/${id}`, { method: 'POST', body: form, headers: { Authorization: `Bearer ${getAuthToken()}` } }).catch(console.warn)
       }
       sessionStorage.setItem('demo_session_id', id)
       sessionStorage.setItem('demo_speakers', JSON.stringify(DEMO_SPEAKERS))
