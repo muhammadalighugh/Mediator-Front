@@ -1,5 +1,7 @@
 # MediFact — Frontend
 
+> **GitHub:** [github.com/muhammadalighugh/Mediator-Front](https://github.com/muhammadalighugh/Mediator-Front)
+
 Next.js 14 frontend for the **Argument Mediator** app. Live at [mediator-front-psi.vercel.app](https://mediator-front-psi.vercel.app).
 
 ---
@@ -150,6 +152,5 @@ Handles both sign-in and registration. Posts to `NEXT_PUBLIC_API_URL/auth/login`
 
 The backend (FastAPI + Python) is deployed separately on **Render**:
 
-- **URL:** `https://mediator-backend-75oi.onrender.com`
-- **Repo folder:** `assemblyai/backend`
-- **README:** `assemblyai/backend/README.md`
+- **GitHub:** [github.com/muhammadalighugh/Mediator-Backend](https://github.com/muhammadalighugh/Mediator-Backend)
+- **Live URL:** `https://mediator-backend-75oi.onrender.com`
