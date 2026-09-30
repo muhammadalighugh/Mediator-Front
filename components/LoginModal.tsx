@@ -230,7 +230,7 @@ export default function LoginModal({ onClose }: LoginModalProps) {
               value={password}
               onChange={(e) => { setPassword(e.target.value); setErrors((p) => ({ ...p, password: undefined })) }}
               onKeyDown={(e) => { if (e.key === 'Enter') handleSubmit() }}
-              placeholder={tab === 'register' ? 'At least 6 characters' : '••••••••'}
+              placeholder={tab === 'login' ? '••••••••' : 'At least 6 characters'}
               disabled={apiState === 'loading'}
               className={`${inputClass(errors.password)} pr-10`}
             />
